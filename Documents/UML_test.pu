@@ -1,0 +1,202 @@
+@startuml sample diagram
+abstract abstract
+abstract class "abstract_class"
+annotation annotation
+class class
+class class_stereo <<stereotype>>
+entity entity
+enum enum
+exception exception
+interface interface
+metaclass metaclass
+protocol protocol
+stereotype stereotype
+struct struct
+circle circle
+() circle_short_form
+diamond diamond
+<> diamond_short_form
+
+拡張1 <|-- 拡張2
+実装1 <|.. 実装2
+構成1 *-- 構成2
+集約1 o-- 集約2
+依存性1 --> 依存性2
+従属性1 ..> 従属性2
+その他1 #-- その他2
+その他1 x-- その他2
+その他1 }-- その他2
+その他1 +-- その他2
+その他1 ^-- その他2
+
+class Object << general >>
+Object : equals()
+ArrayList : Object[] elementData
+ArrayList : size()
+
+Object <|-- ArrayList
+
+note top of Object
+    Javaでは、<size:18>全ての</size>
+    <u>クラス</u>が
+    <i>これ</i>を<b>拡張</b>している
+end note
+note left of Object: クラスの左に定義
+
+note "独立したノート" as N1
+note "いくつかのオブジェクトに紐づけ" as N2
+Object .. N2
+N2 .. ArrayList
+note as N3
+    このノート<u>には</u>
+    <b><color:RoyalBlue>いくつかの</color></b>
+    <s>言葉</s> 線が描かれている
+    そして、これは画像<img:sourceforge.jpg>
+end note
+
+Object ..|> ArrayList : リンク
+note bottom on link #red : リンクへのノート
+
+class Dummy {
+    {field} A field (despite parentheses)
+    .. field ..
+    {static} +String publicField
+    #String protectedField
+    -- private field --
+    ~packagePrivateField : String 
+    -privateField : String 
+    ==
+    {method} Some method
+    .. method ..
+    {abstract} +void publicMethod()
+    #void protectedMethod()
+    __ private method __
+    ~packagePrivateMethod() : void
+    -privateMethod() : void
+    -privateMethod(int num) : void
+}
+
+note right of Dummy::publicField
+    フィールドへの注釈
+end note
+note right of Dummy::privateMethod
+    メソッドへの注釈
+end note
+note right of Dummy::"privateMethod(int num)"
+    同名メソッドへの注釈
+end note
+
+
+package Reversi
+{
+    package Managers
+    {
+        ' class GameManager <<MonoBehaviour>>
+        ' {
+        '     ゲーム全体を管理する
+        ' }
+        ' class GameStateManager
+        ' {
+        '     現在の画面状態（オセロ中、ステージ選択）を保持、管理する
+        ' }
+        ' enum GameState
+        ' {
+            
+        ' }
+        class ReversiManager <<MonoBehaviour>>
+        {
+            オセロ全体を管理する
+            ==
+            --
+            void Input()
+        }
+        class UIManager <<MonoBehaviour>>
+        {
+            ゲーム画面のUIを管理する
+            ==
+            --
+            +void SetCurrentPlayerText()
+            +void ShowResult()
+            +void ShowSkipButton()
+            -void HideSkipButton()
+            +void OnSkipButton()
+        }
+    }
+
+    class Board
+    {
+        オセロの盤面
+        ==
+        +Stone[,] stones
+        --
+        +void PutStone(StoneType type, BoardPos pos)
+        +void RemoveStone(BoardPos pos)
+        +void FlipStone(BoardPos pos)
+        +void TwitchStone(BoardPos pos)
+    }
+    class Stone
+    {
+        オセロの石
+        ==
+        +StoneColor color
+        +StoneType type
+        +int blackCount
+        +int whiteCount
+        --
+        +void PutAnim()
+        +void RemoveAnim()
+        +void FlipAnim()
+        +void TwitchAnim()
+
+        -void UpdateCount()
+    }
+    enum StoneColor
+    {
+        none
+        black
+        white
+    }
+    enum StoneType
+    {
+        normal
+        reverse
+        delayReverse
+        frozen
+    }
+
+    class SelectPanel <<MonoBehaviour>>
+    {
+        石選択パネル
+        ==
+        +StoneType selectedType
+    }
+
+    class LifeTimeScope
+    {
+
+    }
+
+    class BoardPos
+    {
+        盤面の座標
+        ==
+        +int row
+        +int col
+    }
+
+
+    ' GameManager --> GameStateManager : has
+    ' GameManager --> ReversiManager : has
+    ' GameManager --> UIManager : has
+
+    ' GameStateManager --> GameState : has
+
+    ReversiManager ..> Board : DI
+    ReversiManager --> UIManager : has
+
+    UIManager ..> Board : DI
+    UIManager --> SelectPanel : has
+
+    Board --> Stone : has
+}
+@enduml
