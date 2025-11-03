@@ -1,3 +1,5 @@
+using App.Reversi.Core;
+using App.Reversi.Messaging;
 using MessagePipe;
 using VContainer;
 using VContainer.Unity;
@@ -8,16 +10,27 @@ namespace App.Reversi
     {
         protected override void Configure(IContainerBuilder builder)
         {
-            // Publisher
+            // 階層（Hierarchy）から取得するコンポーネント
             builder.RegisterComponentInHierarchy<Board>();
+            builder.RegisterComponentInHierarchy<UIManager>();
 
-            // Subscriber
-            builder.RegisterComponentInHierarchy<ReversiManager>();
+            // Coreコンポーネントを登録
+            builder.RegisterComponentInHierarchy<InputManager>();
+            builder.RegisterComponentInHierarchy<GameController>();
+            builder.RegisterComponentInHierarchy<PlayerInventory>();
 
+            // MessagePipeの設定
             MessagePipeOptions options = builder.RegisterMessagePipe();
-            builder.RegisterMessageBroker<PutStoneInfo>(options);
+
+            // メッセージ
             builder.RegisterMessageBroker<SelectedStoneTypeInfo>(options);
             builder.RegisterMessageBroker<BoardInfo>(options);
+
+            builder.RegisterMessageBroker<CellClickedMessage>(options);
+            builder.RegisterMessageBroker<RequestPutStoneMessage>(options);
+            builder.RegisterMessageBroker<TurnChangedMessage>(options);
+            builder.RegisterMessageBroker<AvailableCountChangedMessage>(options);
+            builder.RegisterMessageBroker<GameOverMessage>(options);
         }
     }
 }
