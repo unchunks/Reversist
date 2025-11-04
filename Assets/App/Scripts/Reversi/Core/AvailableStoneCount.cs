@@ -2,12 +2,12 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 
-namespace App.Reversi
+namespace App.Reversi.Core
 {
     public class AvailableStoneCount : IEnumerable<KeyValuePair<StoneType, int>>
     {
         public Dictionary<StoneType, int> AvailableCount { get; private set; }
-        
+
         public AvailableStoneCount(Dictionary<StoneType, int> initialCounts)
         {
             AvailableCount = new Dictionary<StoneType, int>();

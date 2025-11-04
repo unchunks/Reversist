@@ -54,15 +54,14 @@ namespace App.Reversi
                     break;
                 case StoneType.DelayReverse:
                     _countText.gameObject.SetActive(true);
-                    // _countText.Blink();
                     break;
             }
         }
 
-        public async UniTask Reverse()
+        public async UniTask Flip()
         {
             _countText.gameObject.SetActive(false);
-            await _stone.Reverse();
+            await _stone.Flip();
         }
     }
 }

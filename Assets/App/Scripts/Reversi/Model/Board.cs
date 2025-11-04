@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using Unity.VisualScripting;
 using UnityEngine;
 using VContainer;
+using VContainer.Unity;
 
 namespace App.Reversi
 {
@@ -20,7 +21,10 @@ namespace App.Reversi
         [SerializeField] private Cell _cellPrefab;
 
         [Inject] private IPublisher<BoardInfo> _boardInfoPublisher;
+        [Inject] private IPublisher<PlaySoundEffectMessage> _soundPublisher;
         [Inject] private ISubscriber<RequestPutStoneMessage> _requestSubscriber;
+
+        [Inject] private IObjectResolver _resolver;
 
         public Func<int, UniTask> OnBoardSizeChanged;
         public Dictionary<StoneColor, int> StoneCount;
@@ -46,7 +50,7 @@ namespace App.Reversi
             {
                 for (int col = 0; col < MAX_BOARD_SIZE; col++)
                 {
-                    _boardCell[row, col] = Instantiate(_cellPrefab, new Vector3(col, 0, row), Quaternion.identity);
+                    _boardCell[row, col] = _resolver.Instantiate(_cellPrefab, new Vector3(col, 0, row), Quaternion.identity);
                 }
             }
 
@@ -64,11 +68,6 @@ namespace App.Reversi
             // 他変数の初期化
             _currentBoardSize = DEF_BOARD_SIZE;
             _delayReverseStack = new List<ReverseCountDown>();
-        }
-
-        private void Start()
-        {
-
         }
 
         /// <summary>
@@ -107,7 +106,7 @@ namespace App.Reversi
             }
 
             await Put(putColor, putType, clickPos);
-            await Reverse(reversePos);
+            await Flip(reversePos);
 
             // 遅延反転の処理
             for (int i = 0; i < _delayReverseStack.Count; i++)
@@ -118,8 +117,9 @@ namespace App.Reversi
                     Position pos = _delayReverseStack[i].Pos;
                     StoneColor afterColor = _boardCell[pos.Row, pos.Col].Color.Opponent();
                     reversePos = FindReversePos(afterColor, pos);
-                    await Reverse(pos);
-                    await Reverse(reversePos);
+                    _soundPublisher.Publish(new PlaySoundEffectMessage(SoundEffectType.Reverse));
+                    await Flip(pos);
+                    await Flip(reversePos);
                     _delayReverseStack.RemoveAt(i);
                 }
             }
@@ -128,6 +128,8 @@ namespace App.Reversi
             switch (putType)
             {
                 case StoneType.Extend:
+                    _soundPublisher.Publish(new PlaySoundEffectMessage(SoundEffectType.Extend));
+
                     _currentBoardSize = Math.Min(_currentBoardSize + 2, MAX_BOARD_SIZE);
                     float size = (float)(_currentBoardSize * 0.1 + 0.004);
                     await UniTask.WhenAll(
@@ -135,11 +137,14 @@ namespace App.Reversi
                         OnBoardSizeChanged.Invoke(_currentBoardSize)
                     );
                     break;
+
                 case StoneType.Reverse:
+                    _soundPublisher.Publish(new PlaySoundEffectMessage(SoundEffectType.Reverse));
+
                     StoneColor afterColor = _boardCell[clickPos.Row, clickPos.Col].Color.Opponent();
                     reversePos = FindReversePos(afterColor, clickPos);
-                    await Reverse(clickPos);
-                    await Reverse(reversePos);
+                    await Flip(clickPos);
+                    await Flip(reversePos);
                     break;
 
                 case StoneType.DelayReverse:
@@ -163,16 +168,16 @@ namespace App.Reversi
             await _boardCell[putPos.Row, putPos.Col].Put(putColor, putType);
         }
 
-        private async UniTask Reverse(Position pos)
+        private async UniTask Flip(Position pos)
         {
             StoneCount[_boardCell[pos.Row, pos.Col].Color]--;
             StoneCount[_boardCell[pos.Row, pos.Col].Color.Opponent()]++;
-            await _boardCell[pos.Row, pos.Col].Reverse();
+            await _boardCell[pos.Row, pos.Col].Flip();
         }
 
-        private async UniTask Reverse(List<Position> posList)
+        private async UniTask Flip(List<Position> posList)
         {
-            await UniTask.WhenAll(posList.Select(pos => Reverse(pos)));
+            await UniTask.WhenAll(posList.Select(pos => Flip(pos)));
         }
 
         /// <summary>

@@ -8,73 +8,85 @@ namespace App.Reversi.Core
     [RequireComponent(typeof(AudioSource))]
     public class AudioManager : MonoBehaviour
     {
-        [Header("Audio Clips")]
+        [Header("Audio Sources")]
+        [Tooltip("効果音(SE)再生用のAudioSource")]
+        [SerializeField] private AudioSource _seAudioSource;
+        [Tooltip("BGM再生用のAudioSource。LoopをTrueに設定してください。")]
+        [SerializeField] private AudioSource _bgmAudioSource;
+
+        [Header("Audio Clips (SE)")]
         [SerializeField] private AudioClip _putStoneClip;
-        [SerializeField] private AudioClip _reverseStonesClip;
+        [SerializeField] private AudioClip _flipStonesClip;
+        [SerializeField] private AudioClip _frozenFlipStonesClip;
         [SerializeField] private AudioClip _extendClip;
         [SerializeField] private AudioClip _frozenClip;
         [SerializeField] private AudioClip _reverseClip;
         [SerializeField] private AudioClip _delayReverseClip;
         [SerializeField] private AudioClip _gameOverClip;
 
-        private AudioSource _audioSource;
+        [Header("Audio Clips (BGM)")]
+        [SerializeField] private AudioClip _bgmClip;
 
         [Inject]
         private void Construct(
-            ISubscriber<RequestPutStoneMessage> putStoneSubscriber,
-            ISubscriber<BoardInfo> boardInfoSubscriber,
+            ISubscriber<PlaySoundEffectMessage> soundSubscriber,
             ISubscriber<GameOverMessage> gameOverSubscriber)
         {
-            _audioSource = GetComponent<AudioSource>();
-
-            // 各メッセージに対応するメソッドを登録
-            putStoneSubscriber.Subscribe(OnPutStone);
-            boardInfoSubscriber.Subscribe(OnBoardInfo);
+            soundSubscriber.Subscribe(OnPlaySound);
             gameOverSubscriber.Subscribe(OnGameOver);
+
+            PlayBGM();
         }
 
-        private void OnPutStone(RequestPutStoneMessage msg)
+        private void PlayBGM()
         {
-            if (_putStoneClip != null)
+            if (_bgmAudioSource != null && _bgmClip != null)
             {
-                _audioSource.PlayOneShot(_putStoneClip);
+                _bgmAudioSource.clip = _bgmClip;
+                _bgmAudioSource.loop = true;
+                _bgmAudioSource.Play();
             }
         }
 
-        private void OnBoardInfo(BoardInfo info)
+        private void OnPlaySound(PlaySoundEffectMessage msg)
         {
-            // ひっくり返した時の音
-            if (info.ReversePos.Count > 0 && _reverseStonesClip != null)
-            {
-                // 複数の石が反転しても音は1回だけ鳴らす
-                _audioSource.PlayOneShot(_reverseStonesClip);
-            }
+            if (_seAudioSource == null) return;
 
-            // 特殊石を使った時の音
-            switch (info.PutType)
+            switch (msg.Type)
             {
-                case StoneType.Extend:
-                    if (_extendClip != null) _audioSource.PlayOneShot(_extendClip);
+                case SoundEffectType.PutStone:
+                    if (_putStoneClip != null) _seAudioSource.PlayOneShot(_putStoneClip);
                     break;
-                case StoneType.Frozen:
-                    if (_frozenClip != null) _audioSource.PlayOneShot(_frozenClip);
+                case SoundEffectType.Flip:
+                    if (_flipStonesClip != null) _seAudioSource.PlayOneShot(_flipStonesClip);
+                    break;
+                case SoundEffectType.FrozenFlip:
+                    if (_frozenFlipStonesClip != null) _seAudioSource.PlayOneShot(_frozenFlipStonesClip);
+                    break;
+                case SoundEffectType.Frozen:
+                    if (_frozenClip != null) _seAudioSource.PlayOneShot(_frozenClip);
                     break;
                 //case StoneType.Broken:
                 //case StoneType.Collapse:
-                case StoneType.Reverse:
-                    if (_reverseClip != null) _audioSource.PlayOneShot(_frozenClip);
+                case SoundEffectType.Extend:
+                    if (_extendClip != null) _seAudioSource.PlayOneShot(_extendClip);
                     break;
-                case StoneType.DelayReverse:
-                    if (_delayReverseClip != null) _audioSource.PlayOneShot(_frozenClip);
+                case SoundEffectType.Reverse:
+                    if (_reverseClip != null) _seAudioSource.PlayOneShot(_reverseClip);
+                    break;
+                case SoundEffectType.DelayReverse:
+                    if (_delayReverseClip != null) _seAudioSource.PlayOneShot(_delayReverseClip);
                     break;
             }
         }
 
         private void OnGameOver(GameOverMessage msg)
         {
+            if (_seAudioSource == null) return;
+
             if (_gameOverClip != null)
             {
-                _audioSource.PlayOneShot(_gameOverClip);
+                _seAudioSource.PlayOneShot(_gameOverClip);
             }
         }
     }
