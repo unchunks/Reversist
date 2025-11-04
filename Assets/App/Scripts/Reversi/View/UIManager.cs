@@ -60,7 +60,7 @@ namespace App.Reversi
             _winnerText.gameObject.SetActive(false);
             _restartButton.gameObject.SetActive(false);
 
-            // DIの処理登録
+            // メッセージの処理登録
             _boardInfoSubscriber.Subscribe(UpdateUI);
             _turnChangedSubscriber.Subscribe(msg => SetTopText(msg.CurrentPlayer));
             _gameOverSubscriber.Subscribe(msg => ShowResultView().Forget());

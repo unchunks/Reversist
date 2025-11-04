@@ -18,6 +18,7 @@ namespace App.Reversi
             builder.RegisterComponentInHierarchy<InputManager>();
             builder.RegisterComponentInHierarchy<GameController>();
             builder.RegisterComponentInHierarchy<PlayerInventory>();
+            builder.RegisterComponentInHierarchy<AudioManager>();
 
             // MessagePipe‚Ìİ’è
             MessagePipeOptions options = builder.RegisterMessagePipe();

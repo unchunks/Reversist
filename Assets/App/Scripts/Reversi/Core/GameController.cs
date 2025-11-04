@@ -39,7 +39,7 @@ namespace App.Reversi.Core
                 { StoneColor.White, StoneType.Normal }
             };
 
-            // 購読の登録
+            // メッセージへの登録
             _cellClickedSubscriber.Subscribe(OnCellClicked);
             _boardInfoSubscriber.Subscribe(OnBoardUpdated);
             _selectedStoneTypeSubscriber.Subscribe(OnSelectedStoneTypeChanged);
@@ -76,21 +76,21 @@ namespace App.Reversi.Core
 
             StoneType selectedType = _currentSelectedType[_currentPlayer];
 
-            // 1. 石の在庫をチェック
+            // 石の在庫をチェック
             if (!_playerInventory.HasStock(_currentPlayer, selectedType))
             {
                 Debug.Log($"石の数が足りません: {_currentPlayer}, {selectedType}");
                 return;
             }
 
-            // 2. 盤面に置けるかチェック
+            // 盤面に置けるかチェック
             if (!_board.CanPut(msg.Position))
             {
                 Debug.Log($"その場所には置けません: {msg.Position}");
                 return;
             }
 
-            // 3. 配置リクエストを発行
+            // 配置リクエストを発行
             _board.HideHighlight();
             _requestPutStonePublisher.Publish(new RequestPutStoneMessage(_currentPlayer, selectedType, msg.Position));
         }
