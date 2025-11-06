@@ -47,7 +47,7 @@ namespace App.Reversi.Core
             // カメラ連動の登録
             _board.OnBoardSizeChanged = async (size) =>
             {
-                await _mainCam.transform.DOMoveY(size, 1).ToUniTask();
+                await _mainCam.transform.DOMoveY(size, 1).SetEase(Ease.OutBounce).ToUniTask();
             };
 
             // UIとハイライトの初期化

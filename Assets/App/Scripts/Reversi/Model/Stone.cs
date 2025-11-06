@@ -10,6 +10,7 @@ namespace App.Reversi
     public class Stone : MonoBehaviour
     {
         [Inject] private IPublisher<PlaySoundEffectMessage> _soundPublisher;
+        [Inject] private IPublisher<PlayVFXMessage> _vfxPublisher;
 
         public StoneColor Color { get; private set; }
         public StoneType Type { get; private set; }
@@ -27,10 +28,11 @@ namespace App.Reversi
 
             transform.localRotation = Quaternion.Euler(GetStateRotation(Color));
 
+            _soundPublisher.Publish(new PlaySoundEffectMessage(SoundEffectType.PutStone));
+            _vfxPublisher.Publish(new PlayVFXMessage(VFXType.PutStone, transform.position));
+
             transform.localPosition = new Vector3(0, 2, 0);
             gameObject.transform.localRotation = Quaternion.Euler(GetStateRotation(Color));
-
-            _soundPublisher.Publish(new PlaySoundEffectMessage(SoundEffectType.PutStone));
 
             await transform.DOLocalMoveY(0, 0.3f)
                             .SetEase(Ease.OutQuart)
@@ -41,9 +43,11 @@ namespace App.Reversi
             {
                 case StoneType.Frozen:
                     _soundPublisher.Publish(new PlaySoundEffectMessage(SoundEffectType.Frozen));
+                    _vfxPublisher.Publish(new PlayVFXMessage(VFXType.Frozen, transform.position));
                     break;
                 case StoneType.DelayReverse:
                     _soundPublisher.Publish(new PlaySoundEffectMessage(SoundEffectType.DelayReverse));
+                    _vfxPublisher.Publish(new PlayVFXMessage(VFXType.DelayReverse, transform.position));
                     break;
             }
         }
@@ -60,6 +64,7 @@ namespace App.Reversi
             var angle = GetStateRotation(Color);
 
             _soundPublisher.Publish(new PlaySoundEffectMessage(SoundEffectType.Flip));
+            _vfxPublisher.Publish(new PlayVFXMessage(VFXType.Flip, transform.position));
 
             await UniTask.WhenAll(
                 transform.DOLocalMoveY(0.5f, 0.2f)

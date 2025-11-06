@@ -8,6 +8,7 @@ using Unity.VisualScripting;
 using UnityEngine;
 using VContainer;
 using VContainer.Unity;
+using static UnityEditor.PlayerSettings;
 
 namespace App.Reversi
 {
@@ -22,6 +23,8 @@ namespace App.Reversi
 
         [Inject] private IPublisher<BoardInfo> _boardInfoPublisher;
         [Inject] private IPublisher<PlaySoundEffectMessage> _soundPublisher;
+        [Inject] private IPublisher<PlayVFXMessage> _vfxPublisher;
+
         [Inject] private ISubscriber<RequestPutStoneMessage> _requestSubscriber;
 
         [Inject] private IObjectResolver _resolver;
@@ -118,6 +121,7 @@ namespace App.Reversi
                     StoneColor afterColor = _boardCell[pos.Row, pos.Col].Color.Opponent();
                     reversePos = FindReversePos(afterColor, pos);
                     _soundPublisher.Publish(new PlaySoundEffectMessage(SoundEffectType.Reverse));
+                    _vfxPublisher.Publish(new PlayVFXMessage(VFXType.Reverse, _boardCell[pos.Row, pos.Col].transform.position));
                     await Flip(pos);
                     await Flip(reversePos);
                     _delayReverseStack.RemoveAt(i);
@@ -129,6 +133,7 @@ namespace App.Reversi
             {
                 case StoneType.Extend:
                     _soundPublisher.Publish(new PlaySoundEffectMessage(SoundEffectType.Extend));
+                    _vfxPublisher.Publish(new PlayVFXMessage(VFXType.Extend, _boardCell[clickPos.Row, clickPos.Col].transform.position));
 
                     _currentBoardSize = Math.Min(_currentBoardSize + 2, MAX_BOARD_SIZE);
                     float size = (float)(_currentBoardSize * 0.1 + 0.004);
@@ -140,6 +145,7 @@ namespace App.Reversi
 
                 case StoneType.Reverse:
                     _soundPublisher.Publish(new PlaySoundEffectMessage(SoundEffectType.Reverse));
+                    _vfxPublisher.Publish(new PlayVFXMessage(VFXType.Reverse, _boardCell[clickPos.Row, clickPos.Col].transform.position));
 
                     StoneColor afterColor = _boardCell[clickPos.Row, clickPos.Col].Color.Opponent();
                     reversePos = FindReversePos(afterColor, clickPos);
