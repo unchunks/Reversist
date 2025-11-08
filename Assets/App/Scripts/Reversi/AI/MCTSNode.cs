@@ -18,8 +18,8 @@ namespace App.Reversi.AI
         public MCTSNode Parent { get; }
         public List<MCTSNode> Children { get; }
 
+        public int VisitCount { get; private set; }
         private List<GameAction> _untriedActions; // まだ試していない有効な手
-        private int _visitCount;
         private double _winScore; // AI視点での勝利スコア
 
         /// <summary>
@@ -32,7 +32,7 @@ namespace App.Reversi.AI
             Action = action;
             Children = new List<MCTSNode>();
 
-            _visitCount = 0;
+            VisitCount = 0;
             _winScore = 0.0;
 
             // この状態で実行可能な手をシミュレーターから取得する
@@ -52,7 +52,7 @@ namespace App.Reversi.AI
         /// </summary>
         public double GetUCB1Score()
         {
-            if (_visitCount == 0)
+            if (VisitCount == 0)
             {
                 return double.PositiveInfinity; // 未訪問のノードを最優先
             }
@@ -62,7 +62,7 @@ namespace App.Reversi.AI
             }
 
             // (自分の平均勝率) + C * sqrt( (親の訪問回数の対数) / (自分の訪問回数) )
-            return (_winScore / _visitCount) + C * Math.Sqrt(Math.Log(Parent._visitCount) / _visitCount);
+            return (_winScore / VisitCount) + C * Math.Sqrt(Math.Log(Parent.VisitCount) / VisitCount);
         }
 
         /// <summary>
@@ -205,7 +205,7 @@ namespace App.Reversi.AI
             MCTSNode node = this;
             while (node != null)
             {
-                node._visitCount++;
+                node.VisitCount++;
 
                 // MCTSのスコアは「現在のノードのプレイヤー」視点での勝利スコアである必要がある
                 // シミュレーション結果は「黒」視点 (1.0 = 黒勝利)
@@ -238,7 +238,7 @@ namespace App.Reversi.AI
         /// <returns>子ノードがない場合は例外を返す</returns>
         public MCTSNode GetMostVisitedChild()
         {
-            return Children.OrderByDescending(c => c._visitCount).First();
+            return Children.OrderByDescending(c => c.VisitCount).First();
         }
     }
 }
