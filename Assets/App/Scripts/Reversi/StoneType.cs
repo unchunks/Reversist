@@ -30,11 +30,11 @@ namespace App.Reversi
         {
             switch (type)
             {
-                case StoneType.Normal:          return "ノーマル";
-                case StoneType.Frozen:          return "固定";
-                case StoneType.Reverse:         return "反転";
-                case StoneType.DelayReverse:    return "遅延反転";
-                default:                        return "なし";
+                case StoneType.Normal: return "ノーマル";
+                case StoneType.Frozen: return "凍結";
+                case StoneType.Reverse: return "反転";
+                case StoneType.DelayReverse: return "遅延反転";
+                default: return "なし";
             }
         }
     }

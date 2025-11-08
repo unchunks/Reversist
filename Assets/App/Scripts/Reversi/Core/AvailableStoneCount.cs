@@ -21,6 +21,15 @@ namespace App.Reversi.Core
             }
         }
 
+        /// <summary>
+        /// ディープコピー用コンストラクタ
+        /// </summary>
+        public AvailableStoneCount(AvailableStoneCount source)
+        {
+            // 内部の辞書を新しくコピーして作成する
+            AvailableCount = new Dictionary<StoneType, int>(source.AvailableCount);
+        }
+
         public bool Decrease(StoneType type)
         {
             if (AvailableCount[type] > 0)

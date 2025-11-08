@@ -1,3 +1,6 @@
+using App.Reversi.Core;
+using System.Collections.Generic;
+
 namespace App.Reversi
 {
     public class ReverseCountDown
@@ -9,6 +12,15 @@ namespace App.Reversi
         {
             Pos = pos;
             Delay = delay;
+        }
+
+        /// <summary>
+        /// ディープコピー用コンストラクタ
+        /// </summary>
+        public ReverseCountDown(ReverseCountDown source)
+        {
+            Pos = new Position(source.Pos);
+            Delay = source.Delay;
         }
     }
 }

@@ -11,12 +11,12 @@ namespace App.Reversi
         [SerializeField] private Nail _nail;
         [SerializeField] private Highlight _highlight;
         [SerializeField] private TextMeshPro _countText;
+
         public StoneColor Color => _stone.Color;
         public StoneType Type => _stone.Type;
-
-        public bool isPlased => _stone.gameObject.activeSelf;
-        public int Row;
-        public int Col;
+        public bool isPlased { get; private set; }
+        public int Row { get; private set; }
+        public int Col { get; private set; }
 
         private void Awake()
         {
@@ -43,6 +43,8 @@ namespace App.Reversi
 
         public async UniTask Put(StoneColor color, StoneType type)
         {
+            isPlased = true;
+
             _highlight.gameObject.SetActive(false);
             _stone.gameObject.SetActive(true);
             await _stone.Put(color, type);

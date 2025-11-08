@@ -59,8 +59,6 @@ namespace App.Reversi.Core
                     break;
             }
 
-            Debug.Log("VFX");
-
             if (prefabToSpawn != null)
             {
                 Quaternion rotation = prefabToSpawn.transform.rotation;

@@ -1,9 +1,11 @@
+using App.Reversi.AI;
 using App.Reversi.Messaging;
 using Cysharp.Threading.Tasks;
 using DG.Tweening;
 using MessagePipe;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Unity.VisualScripting;
 using UnityEngine;
 using VContainer;
@@ -15,9 +17,8 @@ namespace App.Reversi
     public class Board : MonoBehaviour
     {
         public const int MAX_BOARD_SIZE = 12;
-
-        public readonly int DEF_BOARD_SIZE = 8;
-        public readonly int DELAY_COUNT = 1;
+        public const int DEF_BOARD_SIZE = 8;
+        public const int DELAY_COUNT = 1;
 
         [SerializeField] private Cell _cellPrefab;
 
@@ -32,15 +33,33 @@ namespace App.Reversi
         public Func<int, UniTask> OnBoardSizeChanged;
         public Dictionary<StoneColor, int> StoneCount;
 
-        private Cell[,] _boardCell;
-        private int _currentBoardSize;
-        private List<ReverseCountDown> _delayReverseStack;
+        public Cell[,] BoardCells { get; private set; }
+        /// <summary> 現在のボードサイズ（GameControllerがカメラ制御で参照） </summary>
+        public int CurrentBoardSize { get; private set; }
+
+        // TODO: いずれカウントをプレイヤーが指定できるようにしたい
+        /// <summary> 遅延反転石のカウントダウン用スタック </summary>
+        public List<ReverseCountDown> DelayReverseStack { get; private set; }
 
         /// <summary> 現在配置可能なマスのリスト </summary>
         private HashSet<Position> _availableMoves = new HashSet<Position>();
 
-        /// <summary> 現在のボードサイズ（GameControllerがカメラ制御で参照） </summary>
-        public int CurrentBoardSize => _currentBoardSize;
+        /// <summary>
+        /// 角の座標を返す
+        /// </summary>
+        /// <param name="boardSize"></param>
+        /// <returns>0:左上、1:右上、2:左下、3:右下</returns>
+        public static Position[] GetCorners(int boardSize)
+        {
+            Position[] corner = new Position[4];
+            int diff = (MAX_BOARD_SIZE - boardSize) / 2;
+            corner[0] = new Position(diff, diff);
+            corner[1] = new Position(diff, MAX_BOARD_SIZE - diff - 1);
+            corner[2] = new Position(MAX_BOARD_SIZE - diff - 1, diff);
+            corner[3] = new Position(MAX_BOARD_SIZE - diff - 1, MAX_BOARD_SIZE - diff - 1);
+            return corner;
+        }
+
 
         private void Awake()
         {
@@ -48,12 +67,12 @@ namespace App.Reversi
             _requestSubscriber.Subscribe(OnPutRequest);
 
             // 盤の初期化
-            _boardCell = new Cell[MAX_BOARD_SIZE, MAX_BOARD_SIZE];
+            BoardCells = new Cell[MAX_BOARD_SIZE, MAX_BOARD_SIZE];
             for (int row = 0; row < MAX_BOARD_SIZE; row++)
             {
                 for (int col = 0; col < MAX_BOARD_SIZE; col++)
                 {
-                    _boardCell[row, col] = _resolver.Instantiate(_cellPrefab, new Vector3(col, 0, row), Quaternion.identity);
+                    BoardCells[row, col] = _resolver.Instantiate(_cellPrefab, new Vector3(col, 0, row), Quaternion.identity);
                 }
             }
 
@@ -69,8 +88,8 @@ namespace App.Reversi
             _ = Put(StoneColor.White, StoneType.Normal, new Position(5, 6));
 
             // 他変数の初期化
-            _currentBoardSize = DEF_BOARD_SIZE;
-            _delayReverseStack = new List<ReverseCountDown>();
+            CurrentBoardSize = DEF_BOARD_SIZE;
+            DelayReverseStack = new List<ReverseCountDown>();
         }
 
         /// <summary>
@@ -101,7 +120,7 @@ namespace App.Reversi
             List<Position> reversePos = FindReversePos(putColor, clickPos);
 
             // 埋まっているマス・ひっくり返す場所がない場合は、置けない
-            if (_boardCell[clickPos.Row, clickPos.Col].Color != StoneColor.None)
+            if (BoardCells[clickPos.Row, clickPos.Col].Color != StoneColor.None)
             {
                 // GameController側でCanPutチェックしているので、通常ここには来ない
                 Debug.LogWarning("既に石が置かれているマスが指定されました。");
@@ -112,19 +131,19 @@ namespace App.Reversi
             await Flip(reversePos);
 
             // 遅延反転の処理
-            for (int i = 0; i < _delayReverseStack.Count; i++)
+            for (int i = 0; i < DelayReverseStack.Count; i++)
             {
-                _delayReverseStack[i].Delay--;
-                if (_delayReverseStack[i].Delay <= 0)
+                DelayReverseStack[i].Delay--;
+                if (DelayReverseStack[i].Delay <= 0)
                 {
-                    Position pos = _delayReverseStack[i].Pos;
-                    StoneColor afterColor = _boardCell[pos.Row, pos.Col].Color.Opponent();
+                    Position pos = DelayReverseStack[i].Pos;
+                    StoneColor afterColor = BoardCells[pos.Row, pos.Col].Color.Opponent();
                     reversePos = FindReversePos(afterColor, pos);
                     _soundPublisher.Publish(new PlaySoundEffectMessage(SoundEffectType.Reverse));
-                    _vfxPublisher.Publish(new PlayVFXMessage(VFXType.Reverse, _boardCell[pos.Row, pos.Col].transform.position));
+                    _vfxPublisher.Publish(new PlayVFXMessage(VFXType.Reverse, BoardCells[pos.Row, pos.Col].transform.position));
                     await Flip(pos);
                     await Flip(reversePos);
-                    _delayReverseStack.RemoveAt(i);
+                    DelayReverseStack.RemoveAt(i);
                 }
             }
 
@@ -133,28 +152,28 @@ namespace App.Reversi
             {
                 case StoneType.Extend:
                     _soundPublisher.Publish(new PlaySoundEffectMessage(SoundEffectType.Extend));
-                    _vfxPublisher.Publish(new PlayVFXMessage(VFXType.Extend, _boardCell[clickPos.Row, clickPos.Col].transform.position));
+                    _vfxPublisher.Publish(new PlayVFXMessage(VFXType.Extend, BoardCells[clickPos.Row, clickPos.Col].transform.position));
 
-                    _currentBoardSize = Math.Min(_currentBoardSize + 2, MAX_BOARD_SIZE);
-                    float size = (float)(_currentBoardSize * 0.1 + 0.004);
+                    CurrentBoardSize = Math.Min(CurrentBoardSize + 2, MAX_BOARD_SIZE);
+                    float size = (float)(CurrentBoardSize * 0.1 + 0.004);
                     await UniTask.WhenAll(
                         transform.DOScale(new Vector3(size, 1, size), 1).ToUniTask(),
-                        OnBoardSizeChanged.Invoke(_currentBoardSize)
+                        OnBoardSizeChanged.Invoke(CurrentBoardSize)
                     );
                     break;
 
                 case StoneType.Reverse:
                     _soundPublisher.Publish(new PlaySoundEffectMessage(SoundEffectType.Reverse));
-                    _vfxPublisher.Publish(new PlayVFXMessage(VFXType.Reverse, _boardCell[clickPos.Row, clickPos.Col].transform.position));
+                    _vfxPublisher.Publish(new PlayVFXMessage(VFXType.Reverse, BoardCells[clickPos.Row, clickPos.Col].transform.position));
 
-                    StoneColor afterColor = _boardCell[clickPos.Row, clickPos.Col].Color.Opponent();
+                    StoneColor afterColor = BoardCells[clickPos.Row, clickPos.Col].Color.Opponent();
                     reversePos = FindReversePos(afterColor, clickPos);
                     await Flip(clickPos);
                     await Flip(reversePos);
                     break;
 
                 case StoneType.DelayReverse:
-                    _delayReverseStack.Add(new ReverseCountDown(clickPos, DELAY_COUNT));
+                    DelayReverseStack.Add(new ReverseCountDown(clickPos, DELAY_COUNT));
                     break;
             }
 
@@ -171,14 +190,14 @@ namespace App.Reversi
             }
 
             StoneCount[putColor]++;
-            await _boardCell[putPos.Row, putPos.Col].Put(putColor, putType);
+            await BoardCells[putPos.Row, putPos.Col].Put(putColor, putType);
         }
 
         private async UniTask Flip(Position pos)
         {
-            StoneCount[_boardCell[pos.Row, pos.Col].Color]--;
-            StoneCount[_boardCell[pos.Row, pos.Col].Color.Opponent()]++;
-            await _boardCell[pos.Row, pos.Col].Flip();
+            StoneCount[BoardCells[pos.Row, pos.Col].Color]--;
+            StoneCount[BoardCells[pos.Row, pos.Col].Color.Opponent()]++;
+            await BoardCells[pos.Row, pos.Col].Flip();
         }
 
         private async UniTask Flip(List<Position> posList)
@@ -191,14 +210,23 @@ namespace App.Reversi
         /// </summary>
         public void HideHighlight()
         {
-            foreach (var cell in _boardCell)
+            foreach (var cell in BoardCells)
             {
                 cell.SetHighlight(false);
             }
         }
 
         /// <summary>
-        /// 現在配置可能な場所の更新と、ハイライトのオンとオフを行う
+        /// 現在配置可能なマス（ハイライトされているマス）のリストを返す
+        /// </summary>
+        /// <returns></returns>
+        public List<Position> GetAvailableMoves()
+        {
+            return _availableMoves.ToList();
+        }
+
+        /// <summary>
+        /// 現在配置可能な場所（_availableMoves）の更新と、ハイライトのオンとオフを行う
         /// </summary>
         /// <param name="nextColor"></param>
         /// <param name="nextType"></param>
@@ -208,7 +236,7 @@ namespace App.Reversi
             int availableCount = 0;
             _availableMoves.Clear();
 
-            foreach (var cell in _boardCell)
+            foreach (var cell in BoardCells)
             {
                 if (!IsInBoard(cell.Row, cell.Col))
                 {
@@ -255,6 +283,22 @@ namespace App.Reversi
             return _availableMoves.Contains(pos);
         }
 
+        public StoneColor GetWinColor()
+        {
+            if (StoneCount[StoneColor.Black] > StoneCount[StoneColor.White])
+            {
+                return StoneColor.Black;
+            }
+            else if (StoneCount[StoneColor.Black] < StoneCount[StoneColor.White])
+            {
+                return StoneColor.White;
+            }
+            else
+            {
+                return StoneColor.None; // 引き分け
+            }
+        }
+
         private List<Position> FindReversePos(StoneColor putColor, Position putPos)
         {
             List<Position> dir = new List<Position> {
@@ -283,11 +327,11 @@ namespace App.Reversi
             var currentCol = putPos.Col + dCol;
             while (IsInBoard(currentRow, currentCol))
             {
-                if (_boardCell[currentRow, currentCol].Color == StoneColor.None)
+                if (BoardCells[currentRow, currentCol].Color == StoneColor.None)
                 {
                     break;
                 }
-                if (_boardCell[currentRow, currentCol].Color == putColor)
+                if (BoardCells[currentRow, currentCol].Color == putColor)
                 {
                     return reversePos;
                 }
@@ -301,7 +345,7 @@ namespace App.Reversi
         private bool IsInBoard(int row, int col)
         {
             int center = MAX_BOARD_SIZE / 2;
-            int halfSize = _currentBoardSize / 2;
+            int halfSize = CurrentBoardSize / 2;
             return row >= center - halfSize && row < center + halfSize && col >= center - halfSize && col < center + halfSize;
         }
     }

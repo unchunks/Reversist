@@ -15,9 +15,12 @@ namespace App.Reversi.Core
 
         [Inject] private IPublisher<CellClickedMessage> _cellClickedPublisher;
 
+        private bool _isInputActive = true;
+        public void SetInputActive(bool isActive) => _isInputActive = isActive;
+
         private void Update()
         {
-            if (Input.GetMouseButtonDown(0))
+            if (_isInputActive && Input.GetMouseButtonDown(0))
             {
                 Ray ray = _mainCam.ScreenPointToRay(Input.mousePosition);
 

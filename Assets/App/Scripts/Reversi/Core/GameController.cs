@@ -8,15 +8,29 @@ using VContainer;
 
 namespace App.Reversi.Core
 {
+    public enum GameMode
+    {
+        PVP,
+        PVE
+    }
+
     /// <summary>
     /// ゲームの進行、ターン管理、勝敗判定を行う
     /// </summary>
     public class GameController : MonoBehaviour
     {
+        [Header("Game Settings")]
+        [SerializeField] private GameMode _gameMode = GameMode.PVE;
+        [SerializeField] private StoneColor _aiColor = StoneColor.White;
+
+        [Header("References")]
         [SerializeField] private Camera _mainCam;
 
         [Inject] private Board _board;
         [Inject] private PlayerInventory _playerInventory;
+        [Inject] private InputManager _inputManager;
+        [Inject] private AIAgent _aiAgent;
+
         [Inject] private IPublisher<RequestPutStoneMessage> _requestPutStonePublisher;
         [Inject] private IPublisher<TurnChangedMessage> _turnChangedPublisher;
         [Inject] private IPublisher<GameOverMessage> _gameOverPublisher;
@@ -53,6 +67,12 @@ namespace App.Reversi.Core
             // UIとハイライトの初期化
             _board.UpdateHighlight(_currentPlayer, _currentSelectedType[_currentPlayer]);
             _turnChangedPublisher.Publish(new TurnChangedMessage(_currentPlayer));
+
+            // AIの初期化を追加
+            if (_gameMode == GameMode.PVE)
+            {
+                _aiAgent.Initialize(_aiColor);
+            }
         }
 
         /// <summary>
@@ -122,24 +142,36 @@ namespace App.Reversi.Core
                 // パス
                 _currentPlayer = _currentPlayer.Opponent();
                 nextType = _currentSelectedType[_currentPlayer];
+                Debug.Log(_currentPlayer.Opponent() + " がパスしました");
 
                 if (_board.UpdateHighlight(_currentPlayer, nextType) == 0)
                 {
                     // 両者置けない = ゲームオーバー
                     _isGameOver = true;
                     _board.HideHighlight();
-                    _gameOverPublisher.Publish(new GameOverMessage());
+                    _inputManager.SetInputActive(false);
+
+                    StoneColor winColor = _board.GetWinColor();
+                    int blackCount = _board.StoneCount[StoneColor.Black];
+                    int whiteCount = _board.StoneCount[StoneColor.White];
+                    _gameOverPublisher.Publish(new GameOverMessage(winColor, blackCount, whiteCount));
+                    return;
                 }
-                else
-                {
-                    // パスして次のプレイヤーのターン
-                    _turnChangedPublisher.Publish(new TurnChangedMessage(_currentPlayer));
-                }
+            }
+
+            // ターンの交代を通知
+            Debug.Log("次のターン: " + _currentPlayer);
+            _turnChangedPublisher.Publish(new TurnChangedMessage(_currentPlayer));
+
+            if (_gameMode == GameMode.PVE && _currentPlayer == _aiColor)
+            {
+                // AIのターン：プレイヤーの入力を無効化
+                _inputManager.SetInputActive(false);
             }
             else
             {
-                // 通常のターン交代
-                _turnChangedPublisher.Publish(new TurnChangedMessage(_currentPlayer));
+                // 人間のターン：プレイヤーの入力を有効化
+                _inputManager.SetInputActive(true);
             }
         }
     }

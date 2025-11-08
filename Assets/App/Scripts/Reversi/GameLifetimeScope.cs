@@ -20,6 +20,7 @@ namespace App.Reversi
             builder.RegisterComponentInHierarchy<PlayerInventory>();
             builder.RegisterComponentInHierarchy<AudioManager>();
             builder.RegisterComponentInHierarchy<VFXManager>();
+            builder.RegisterComponentInHierarchy<AIAgent>();
 
             // MessagePipeÇÃê›íË
             MessagePipeOptions options = builder.RegisterMessagePipe();
@@ -35,6 +36,7 @@ namespace App.Reversi
             builder.RegisterMessageBroker<GameOverMessage>(options);
             builder.RegisterMessageBroker<PlaySoundEffectMessage>(options);
             builder.RegisterMessageBroker<PlayVFXMessage>(options);
+            builder.RegisterMessageBroker<AIThinkingMessage>(options);
         }
     }
 }

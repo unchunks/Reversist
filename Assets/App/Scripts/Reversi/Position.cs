@@ -14,6 +14,15 @@ namespace App.Reversi
             Col = col;
         }
 
+        /// <summary>
+        /// ディープコピー用コンストラクタ
+        /// </summary>
+        public Position(Position source)
+        {
+            Row = source.Row;
+            Col = source.Col;
+        }
+
         public override bool Equals(object obj)
         {
             if (obj is Position other)

@@ -15,6 +15,7 @@ namespace App.Reversi
     {
         // ゲーム中に使用するUI
         [SerializeField] private TextMeshProUGUI _topText;
+        [SerializeField] private TextMeshProUGUI _aiText;
 
         [SerializeField] private StoneTypePanel _blackPanel;
         [SerializeField] private StoneTypePanel _whitePanel;
@@ -34,6 +35,7 @@ namespace App.Reversi
         [Inject] private ISubscriber<TurnChangedMessage> _turnChangedSubscriber;
         [Inject] private ISubscriber<GameOverMessage> _gameOverSubscriber;
         [Inject] private ISubscriber<AvailableCountChangedMessage> _countSubscriber;
+        [Inject] private ISubscriber<AIThinkingMessage> _aiThinkingSubscriber;
 
         private void Awake()
         {
@@ -63,13 +65,30 @@ namespace App.Reversi
             // メッセージの処理登録
             _boardInfoSubscriber.Subscribe(UpdateUI);
             _turnChangedSubscriber.Subscribe(msg => SetTopText(msg.CurrentPlayer));
-            _gameOverSubscriber.Subscribe(msg => ShowResultView().Forget());
+            _gameOverSubscriber.Subscribe(msg => ShowResultView(msg).Forget());
             _countSubscriber.Subscribe(msg => UpdateAvailableCount(msg.Color, msg.Type, msg.Count));
+            _aiThinkingSubscriber.Subscribe(OnAIThinking);
         }
 
         public void SetTopText(StoneColor currentPlayer)
         {
             _topText.text = $"{currentPlayer.ToString()} のターン";
+        }
+
+        private void OnAIThinking(AIThinkingMessage msg)
+        {
+            Debug.Log("AIの思考状態が変化: " + msg.AiColor.ToString() + " IsThinking=" + msg.IsThinking.ToString());
+            if (msg.IsThinking)
+            {
+                Debug.Log("AIが思考中です");
+                _aiText.text = $"AI({msg.AiColor.ToString()})が思考中...";
+                _aiText.gameObject.SetActive(true);
+            }
+            else
+            {
+                Debug.Log("AIの思考が終了しました");
+                _aiText.gameObject.SetActive(false);
+            }
         }
 
         public void SetTotalStonesCountText(Dictionary<StoneColor, int> stoneCount)
@@ -80,7 +99,7 @@ namespace App.Reversi
 
         public void UpdateAvailableCount(StoneColor color, StoneType type, int count)
         {
-            Debug.Log("石の個数を更新: " + color.ToString() + " " + type.ToString() + " " + count.ToString());
+            //Debug.Log("石の個数を更新: " + color.ToString() + " " + type.ToString() + " " + count.ToString());
             if (color == StoneColor.Black)
             {
                 _blackPanel.UpdateAvailableCount(type, count);
@@ -100,7 +119,7 @@ namespace App.Reversi
             SetTotalStonesCountText(boardInfo.TotalStoneCount);
         }//SetTopText(boardInfo.PutPlayer.Opponent());
 
-        public async UniTask ShowResultView()
+        public async UniTask ShowResultView(GameOverMessage msg)
         {
             _topText.gameObject.SetActive(false);
             _blackPanel.gameObject.SetActive(false);
@@ -118,6 +137,10 @@ namespace App.Reversi
                 _whiteTotalStonesCountText.rectTransform.DOScale(new Vector3(1.5f, 1.5f), 1).ToUniTask()
             );
 
+            string WinnerString = (msg.Winner == StoneColor.None)
+                ? "引き分け"
+                : msg.Winner.ToString() + "の勝ち";
+            _winnerText.text = $"{WinnerString} の勝利！";
             _winnerText.gameObject.SetActive(true);
             _winnerText.rectTransform.localScale = Vector3.zero;
             await _winnerText.rectTransform.DOScale(Vector3.one, 0.2f).ToUniTask();
