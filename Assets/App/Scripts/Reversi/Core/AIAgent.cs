@@ -46,8 +46,7 @@ namespace App.Reversi.Core
 			if (msg.CurrentPlayer == _aiColor)
 			{
 				_isAITurn = true;
-				// 思考開始（UniTaskをForgetで非同期実行）
-				//RequestAIMove().Forget();
+				RequestAIMove().Forget();
 			}
 			else
 			{
@@ -58,36 +57,35 @@ namespace App.Reversi.Core
 		/// <summary>
 		/// AIの思考と行動実行
 		/// </summary>
-		//private async UniTask RequestAIMove()
-		//{
-		//    // UIに「思考中」を通知
-		//    Debug.Log("AI思考開始");
-		//    _aiThinkingPublisher.Publish(new AIThinkingMessage(_aiColor, true));
+		private async UniTask RequestAIMove()
+		{
+			// UIに「思考中」を通知
+			Debug.Log("AI思考開始");
+			_aiThinkingPublisher.Publish(new AIThinkingMessage(_aiColor, true));
 
-		//    // 現在のUnityの盤面から、AIシミュレーター用のGameStateを構築
-		//    GameState currentState = BuildCurrentGameState();
+			// 現在のUnityの盤面から、AIシミュレーター用のGameStateを構築
+			GameState currentState = BuildCurrentGameState();
 
-		//    // MCTS実行（メインスレッドをブロックしないよう、別スレッドで実行）
-		//    GameAction bestAction = await UniTask.RunOnThreadPool(() =>
-		//    {
-		//        // MCTSに思考させる
-		//        return MCTS.Search(currentState, _thinkingTimeMilliseconds);
-		//    }, cancellationToken: this.GetCancellationTokenOnDestroy()); // オブジェクト破棄時（AI思考中にゲームを終了したとき）にキャンセル可能にする
+			// MCTS実行（メインスレッドをブロックしないよう、別スレッドで実行）
+			GameAction bestAction = await UniTask.RunOnThreadPool(() =>
+			{
+				// MCTSに思考させる
+				return MCTS.Search(currentState, _thinkingTimeMilliseconds);
+			}, cancellationToken: this.GetCancellationTokenOnDestroy());
 
-		//    // 思考が終わったことを通知
-		//    Debug.Log("AI思考終了");
-		//    _aiThinkingPublisher.Publish(new AIThinkingMessage(_aiColor, false));
+			// 思考が終わったことを通知
+			Debug.Log("AI思考終了");
+			_aiThinkingPublisher.Publish(new AIThinkingMessage(_aiColor, false));
 
-		//    // メインスレッドで結果を反映
-		//    if (!_isAITurn) return; // 思考中にゲームが終わったなど
-
-		//    if (bestAction != null)
-		//    {
-		//        // 石を置くリクエストを発行
-		//        _board.HideHighlight();
-		//        _requestPutStonePublisher.Publish(new RequestPutStoneMessage(bestAction.Player, bestAction.Type, bestAction.Position));
-		//    }
-		//}
+			if (!_isAITurn) return; // 思考中にゲームが終わったなど
+			if (bestAction != null)
+			{
+				// 石を置くリクエストを発行
+				_board.HideHighlight();
+				_requestPutStonePublisher.Publish(new RequestPutStoneMessage(bestAction.Player, bestAction.Type, bestAction.Position));
+			}
+			// (bestAction == null の場合はパス。GameControllerが次のターンで検知する)
+		}
 
 		/// <summary>
 		/// 現在のUnityの盤面(Board, PlayerInventory)から
@@ -95,7 +93,6 @@ namespace App.Reversi.Core
 		/// </summary>
 		private GameState BuildCurrentGameState()
 		{
-			// シミュレーター用の状態をディープコピーして作成
 			var inventoriesCopy = new Dictionary<StoneColor, AvailableStoneCount>();
 			foreach (var inv in _playerInventory.Inventories)
 			{
@@ -123,7 +120,9 @@ namespace App.Reversi.Core
 					if (cell != null && cell.isPlased)
 					{
 						state.Board[r, c] = cell.Color;
+
 						state.StoneTypes[r, c] = cell.Type;
+
 						state.StoneCount[cell.Color]++;
 					}
 				}

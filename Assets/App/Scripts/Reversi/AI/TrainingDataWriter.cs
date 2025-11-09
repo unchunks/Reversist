@@ -1,43 +1,45 @@
+using System;
 using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
 
 namespace App.Reversi.AI
 {
-    /// <summary>
-    /// 1つの盤面の訓練データを定義
-    /// </summary>
-    [System.Serializable]
-    public class TrainingSample
-    {
-        // 入力：盤面状態（12x12xNチャンネル）
-        public float[] inputTensor;
+	[System.Serializable]
+	public class TrainingSample
+	{
+		public float[] inputTensor;
+		public float[] policy;
+		public float value;
+	}
 
-        // 教師データ（Policy）：各行動の有望度（MCTSの訪問回数比率）
-        public float[] policy;
+	[System.Serializable]
+	public class GameRecord
+	{
+		public List<TrainingSample> samples = new List<TrainingSample>();
 
-        // 教師データ（Value）：この局面からの最終的な勝敗 (1=勝ち, -1=負け, 0=引き分け)
-        public float value;
-    }
+		/// <summary>
+		/// ClassicMCTSモード（ランダム・プレイアウト）で棋譜を生成する際、
+		/// JSONにシリアライズしないMCTSノード（訪問回数など）を一時的に保持します。
+		/// </summary>
+		[System.NonSerialized]
+		public List<object> tempRoots = new List<object>();
+	}
 
-    /// <summary>
-    /// 1ゲーム分の訓練データをリストとして保持
-    /// </summary>
-    [System.Serializable]
-    public class GameRecord
-    {
-        public List<TrainingSample> samples = new List<TrainingSample>();
-    }
-
-    /// <summary>
-    /// 棋譜データをJSONファイルとして書き出すクラス
-    /// </summary>
-    public static class TrainingDataWriter
-    {
-        public static void Write(GameRecord record, string filePath)
-        {
-            string json = JsonUtility.ToJson(record);
-            File.WriteAllText(filePath, json);
-        }
-    }
+	public static class TrainingDataWriter
+	{
+		public static void Write(GameRecord record, string filePath)
+		{
+			try
+			{
+				// tempRootsは[NonSerialized]なので、JSONには含まれません
+				string json = JsonUtility.ToJson(record);
+				File.WriteAllText(filePath, json);
+			}
+			catch (Exception e)
+			{
+				Debug.LogError($"棋譜の書き出しに失敗: {filePath} \n{e.Message}");
+			}
+		}
+	}
 }

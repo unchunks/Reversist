@@ -1,46 +1,39 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading; // CancellationTokenのために追加
+using System.Threading;
 
 namespace App.Reversi.AI
 {
 	/// <summary>
-	/// モンテカルロ木探索の各ノード
+	/// クラシックMCTSのノード。ランダム・プレイアウトで使用する。
 	/// </summary>
-	public class MCTSNode
+	public class MCTSNode_Classic
 	{
-		// UCB1計算用の探索定数 (sqrt(2) が一般的)
 		private static readonly double C = Math.Sqrt(2.0);
 		private static readonly Random _random = new Random();
 
 		public GameState State { get; }
-		public GameAction Action { get; } // このノードに至った親からの行動
-		public MCTSNode Parent { get; }
-		public List<MCTSNode> Children { get; }
+		public GameAction Action { get; }
+		public MCTSNode_Classic Parent { get; }
+		public List<MCTSNode_Classic> Children { get; }
 
 		public int VisitCount { get; private set; }
-		private List<GameAction> _untriedActions; // まだ試していない有効な手
-		private double _winScore; // AI視点での勝利スコア
-		private readonly object _lock = new object(); // SelfPlayManagerの並列実行用
+		private List<GameAction> _untriedActions;
+		private double _winScore;
+		private readonly object _lock = new object();
 
-		/// <summary>
-		/// ノードのコンストラクタ
-		/// </summary>
-		public MCTSNode(GameState state, MCTSNode parent = null, GameAction action = null)
+		public MCTSNode_Classic(GameState state, MCTSNode_Classic parent = null, GameAction action = null)
 		{
 			State = state;
 			Parent = parent;
 			Action = action;
-			Children = new List<MCTSNode>();
-
+			Children = new List<MCTSNode_Classic>();
 			VisitCount = 0;
 			_winScore = 0.0;
 
-			// この状態で実行可能な手をシミュレーターから取得する
 			if (!state.IsGameOver)
 			{
-				// GetValidActionsはキャッシュ対応済み [cite: uploaded:ReversiSimulator.cs]
 				_untriedActions = ReversiSimulator.GetValidActions(state);
 			}
 			else
@@ -60,7 +53,7 @@ namespace App.Reversi.AI
 			}
 		}
 
-		public MCTSNode SelectBestChild()
+		public MCTSNode_Classic SelectBestChild()
 		{
 			lock (_lock)
 			{
@@ -68,7 +61,7 @@ namespace App.Reversi.AI
 			}
 		}
 
-		public MCTSNode Expand()
+		public MCTSNode_Classic Expand()
 		{
 			lock (_lock)
 			{
@@ -78,10 +71,10 @@ namespace App.Reversi.AI
 				GameAction action = _untriedActions[_random.Next(_untriedActions.Count)];
 				_untriedActions.Remove(action);
 
-				// 「ディープコピー版」を呼び出し、新しいGameStateを作成する [cite: uploaded:ReversiSimulator.cs]
+				// 「ディープコピー版」を呼び出し、新しいGameStateを作成する
 				GameState nextState = ReversiSimulator.ExecuteAction(State, action);
 
-				MCTSNode childNode = new MCTSNode(nextState, this, action);
+				MCTSNode_Classic childNode = new MCTSNode_Classic(nextState, this, action);
 				Children.Add(childNode);
 
 				return childNode;
@@ -91,28 +84,23 @@ namespace App.Reversi.AI
 		/// <summary>
 		/// このノードからランダムにゲームをシミュレート（プレイアウト）し、結果を返す (Simulation)
 		/// </summary>
-		public float Simulate()
-		{
-			return Simulate(CancellationToken.None); // CancellationTokenなしで呼び出す
-		}
-
 		public float Simulate(CancellationToken token)
 		{
-			// 1回だけディープコピーする [cite: uploaded:GameState.cs]
+			// 1回だけディープコピーする
 			GameState simState = new GameState(State);
 
 			while (!simState.IsGameOver)
 			{
 				if (token.IsCancellationRequested) return 0.0f;
 
-				// キャッシュされた有効な手を取得 [cite: uploaded:ReversiSimulator.cs]
+				// キャッシュされた有効な手を取得
 				var actions = ReversiSimulator.GetValidActions(simState);
 
 				GameAction randomAction = (actions.Count > 0)
 					? actions[_random.Next(actions.Count)]
 					: null; // パス
 
-				// 「直接変更版」を呼び出し、simStateを直接書き換える [cite: uploaded:ReversiSimulator.cs]
+				// 「直接変更版」を呼び出し、simStateを直接書き換える
 				ReversiSimulator.ExecuteActionInPlace(simState, randomAction);
 			}
 
@@ -121,13 +109,12 @@ namespace App.Reversi.AI
 
 		public void Backpropagate(float result)
 		{
-			MCTSNode node = this;
+			MCTSNode_Classic node = this;
 			while (node != null)
 			{
 				lock (node._lock)
 				{
 					node.VisitCount++;
-					// シミュレーション結果は「黒」視点 (1.0 = 黒勝利) [cite: uploaded:ReversiSimulator.cs]
 					if (node.State.CurrentPlayer == StoneColor.Black)
 					{
 						if (result == 1.0f) node._winScore += 1.0;
@@ -151,7 +138,7 @@ namespace App.Reversi.AI
 				return _untriedActions.Count > 0;
 			}
 		}
-		public MCTSNode GetMostVisitedChild()
+		public MCTSNode_Classic GetMostVisitedChild()
 		{
 			lock (_lock)
 			{

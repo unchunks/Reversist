@@ -7289,9 +7289,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 94c6b5c3ab8cf5143955a12d1b366486, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::App.Reversi.AI.SelfPlayManager
+  _mode: 0
   _gamesToPlay: 1000
-  _mctsIterations: 800
-  _maxParallelGames: 0
+  _mctsIterationsPerMove: 1000
+  _nnModelAsset: {fileID: 0}
+  _maxBatchSize: 64
+  _parallelGames: 32
   _outputDirectory: TrainingData
 --- !u!1 &1810285163
 GameObject:
