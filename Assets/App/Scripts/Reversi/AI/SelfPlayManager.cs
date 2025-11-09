@@ -1,199 +1,330 @@
 using Cysharp.Threading.Tasks;
+using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using UnityEngine;
+using Unity.Barracuda;
 
 namespace App.Reversi.AI
 {
-    /// <summary>
-    /// AIの自己対戦を実行し、教師データ（棋譜）を生成する
-    /// </summary>
-    public class SelfPlayManager : MonoBehaviour
-    {
-        [Header("学習設定")]
-        [SerializeField] private int _gamesToPlay = 100; // 生成するゲーム数
-        [SerializeField] private int _mctsIterations = 100; // 1手あたりのMCTS探索回数
-        [SerializeField] private string _outputDirectory = "TrainingData";
+	/// <summary>
+	/// AIの自己対戦をGPU/NPUバッチ処理で並列実行し、教師データ（棋譜）を生成する
+	/// </summary>
+	public class SelfPlayManager : MonoBehaviour
+	{
+		[Header("学習設定")]
+		[SerializeField] private int _gamesToPlay = 1000;
+		[SerializeField] private int _mctsIterationsPerMove = 800; // 1手あたりのMCTS探索回数
 
-        [ContextMenu("Start Self Play")]
-        public async void StartSelfPlay()
-        {
-            string dirPath = Path.Combine(Application.dataPath, _outputDirectory);
-            if (!Directory.Exists(dirPath))
-            {
-                Directory.CreateDirectory(dirPath);
-            }
+		[Header("NNモデル")]
+		[SerializeField] private NNModel _nnModelAsset; // .onnxモデルファイルをInspectorから設定
+		[SerializeField] private int _maxBatchSize = 64; // GPUに一度に送る盤面の数
 
-            Debug.Log($"自己対戦を開始します。総ゲーム数: {_gamesToPlay}");
+		[Header("並列設定")]
+		[Tooltip("同時に実行するゲーム数。CPUコア数（ProcessorCount）に合わせるのが最適")]
+		[SerializeField] private int _parallelGames = 32;
 
-            // 重い自己対戦を別スレッドで実行
-            await UniTask.RunOnThreadPool(() =>
-            {
-                for (int i = 0; i < _gamesToPlay; i++)
-                {
-                    RunSingleGame(i, dirPath);
-                }
-            });
+		[SerializeField] private string _outputDirectory = "TrainingData";
 
-            // forループはメインスレッドで実行する
-            for (int i = 0; i < _gamesToPlay; i++)
-            {
-                int gameIndex = i; // ラムダ式でキャプチャするためにローカル変数にコピー
+		// NN推論エンジン
+		private Model _runtimeModel;
+		private IWorker _worker;
 
-                // RunSingleGameの実行「だけ」を別スレッド（ThreadPool）に任せる
-                await UniTask.RunOnThreadPool(() =>
-                {
-                    RunSingleGame(gameIndex, dirPath);
-                });
+		// スレッドセーフな進捗カウンタ
+		private int _gamesCompletedCount = 0;
 
-                // 1ゲーム終わるごとにメインスレッドに戻ってくる
-                // ここで進捗ログを1回だけ出力する
-                Debug.Log($"進捗: {i + 1} / {_gamesToPlay} ゲーム完了");
-            }
+		// NN評価待ちのノードを全スレッドで共有するキュー
+		private ConcurrentQueue<MCTSNode> _evaluationQueue;
+		private CancellationTokenSource _cts;
 
-            Debug.Log($"自己対戦が完了しました。 {_gamesToPlay} ゲームの棋譜を生成。");
+		[ContextMenu("Start Self Play")]
+		public async void StartSelfPlay()
+		{
+			// Barracuda (NNエンジン) のセットアップ
+			try
+			{
+				_runtimeModel = ModelLoader.Load(_nnModelAsset);
+				// GPU (ComputePrecompiled) を優先し、なければNPU(Fast)やCPU(CSharp)を使う
+				_worker = WorkerFactory.CreateWorker(WorkerFactory.Type.Auto, _runtimeModel);
+				Debug.Log($"Barracudaワーカーを {WorkerFactory.Type.Auto} で作成しました。");
+			}
+			catch (Exception e)
+			{
+				Debug.LogError($"NNモデルのロードまたはワーカーの作成に失敗しました: {e.Message}");
+				return;
+			}
 
-        }
+			// 共有リソースの初期化
+			_cts = new CancellationTokenSource();
+			_evaluationQueue = new ConcurrentQueue<MCTSNode>();
+			_gamesCompletedCount = 0;
 
-        /// <summary>
-        /// 1ゲーム分の自己対戦を実行し、棋譜を保存する
-        /// </summary>
-        private void RunSingleGame(int gameIndex, string dirPath)
-        {
-            GameState state = new GameState();
-            var gameRecord = new GameRecord();
+			string dirPath = Path.Combine(Application.dataPath, _outputDirectory);
+			if (!Directory.Exists(dirPath)) Directory.CreateDirectory(dirPath);
 
-            // MCTS探索結果（Policy）を一時的に保持するリスト
-            var mctsPolicies = new List<(GameState state, MCTSNode root)>();
+			Debug.Log($"自己対戦を開始します。総ゲーム数: {_gamesToPlay}, 並列ゲーム数: {_parallelGames}");
 
-            while (!state.IsGameOver)
-            {
-                // MCTSで最善の手を探索
-                MCTSNode rootNode = new MCTSNode(state);
-                GameAction bestAction = Search(rootNode, _mctsIterations); // 時間ではなく回数で指定
+			try
+			{
+				// GPU/NPUで推論バッチ処理を行うタスクを開始（1つだけ）
+				UniTask evaluationTask = RunEvaluationBatchLoopAsync(_cts.Token);
 
-                // 棋譜（盤面とMCTSの探索結果）を記録
-                mctsPolicies.Add((new GameState(state), rootNode));
+				// CPUでMCTS探索を行うゲーム実行タスクを開始（_parallelGamesの数だけ）
+				var gameTasks = new List<UniTask>();
+				for (int i = 0; i < _parallelGames; i++)
+				{
+					gameTasks.Add(RunGameSimulationLoopAsync(dirPath, _cts.Token));
+				}
 
-                // 手を実行
-                state = ReversiSimulator.ExecuteAction(state, bestAction);
-            }
+				// すべて完了するのを待つ
+				await UniTask.WhenAll(gameTasks.Concat(new[] { evaluationTask }));
+			}
+			catch (OperationCanceledException)
+			{
+				Debug.Log("自己対戦が中断されました。");
+			}
+			catch (Exception e)
+			{
+				Debug.LogError($"自己対戦中にエラーが発生しました: {e.Message}\n{e.StackTrace}");
+			}
+			finally
+			{
+				_worker?.Dispose();
+				_cts?.Dispose();
+				Debug.Log("自己対戦プロセスが終了しました。");
+			}
+		}
 
-            // --- ゲーム終了 ---
-            float finalResult = ReversiSimulator.GetResult(state); // 最終的な勝敗
+		[ContextMenu("Stop Self Play")]
+		public void StopSelfPlay()
+		{
+			if (_cts == null || _cts.IsCancellationRequested)
+			{
+				Debug.Log("学習は実行されていません。");
+				return;
+			}
+			Debug.LogWarning("学習の中断リクエストを送信しました...");
+			_cts.Cancel();
+		}
 
-            // 棋譜データ(GameRecord)を構築
-            foreach (var (gameState, root) in mctsPolicies)
-            {
-                var sample = new TrainingSample();
+		/// <summary>
+		/// （CPUスレッド）1つのスレッドがゲームのシミュレーションを繰り返し実行する
+		/// </summary>
+		private async UniTask RunGameSimulationLoopAsync(string dirPath, CancellationToken token)
+		{
+			// このスレッドが起動してから、全ゲーム数が完了するまで動き続ける
+			while (Volatile.Read(ref _gamesCompletedCount) < _gamesToPlay && !token.IsCancellationRequested)
+			{
+				// スレッドセーフにゲーム番号を取得
+				int gameIndex = Interlocked.Increment(ref _gamesCompletedCount) - 1;
+				if (gameIndex >= _gamesToPlay) break;
 
-                // 入力テンソル (GameState -> float[])
-                sample.inputTensor = ConvertStateToInputTensor(gameState);
+				GameState state = new GameState();
+				var gameRecord = new GameRecord();
+				var mctsPolicies = new List<(GameState state, MCTSNode root)>();
 
-                // Policy (MCTSの訪問回数 -> float[])
-                sample.policy = ConvertPolicyToTensor(root);
+				while (!state.IsGameOver && !token.IsCancellationRequested)
+				{
+					// MCTS探索（NN評価はキューイングされる）
+					MCTSNode rootNode = await SearchWithNN(state, _mctsIterationsPerMove, token);
 
-                // Value (最終的な勝敗)
-                // AI(黒)視点の勝敗に変換
-                if (gameState.CurrentPlayer == StoneColor.Black)
-                {
-                    if (finalResult == 1.0f) sample.value = 1.0f;
-                    else if (finalResult == -1.0f) sample.value = -1.0f;
-                    else sample.value = 0.0f;
-                }
-                else // 相手(白)視点
-                {
-                    if (finalResult == 1.0f) sample.value = -1.0f; // 黒が勝った＝白の負け
-                    else if (finalResult == -1.0f) sample.value = 1.0f; // 黒が負けた＝白の勝ち
-                    else sample.value = 0.0f;
-                }
+					if (token.IsCancellationRequested) break;
 
-                gameRecord.samples.Add(sample);
-            }
+					mctsPolicies.Add((new GameState(state), rootNode));
 
-            // ファイルに書き出し
-            string filePath = Path.Combine(dirPath, $"game_{gameIndex:D5}.json");
-            TrainingDataWriter.Write(gameRecord, filePath);
-        }
+					// 最も訪問回数が多かった手を選択（温度パラメータ=0）
+					if (rootNode.Children.Count == 0) break; // 手がない
+					GameAction bestAction = rootNode.Children.OrderByDescending(kvp => kvp.Value.GetVisitCount()).First().Key;
 
-        // MCTS.Searchを回数ベースに変更したもの
-        private GameAction Search(MCTSNode rootNode, int iterations)
-        {
-            for (int i = 0; i < iterations; i++)
-            {
-                MCTSNode node = rootNode;
-                while (!node.HasUntriedActions() && node.State.IsGameOver)
-                {
-                    node = node.SelectBestChild();
-                }
-                if (node.HasUntriedActions())
-                {
-                    node = node.Expand();
-                }
-                float result = node.State.IsGameOver ? ReversiSimulator.GetResult(node.State) : node.Simulate();
-                node.Backpropagate(result);
-            }
-            return rootNode.GetMostVisitedChild()?.Action;
-        }
+					state = ReversiSimulator.ExecuteAction(state, bestAction);
+				}
 
-        /// <summary>
-        /// GameStateをNNの入力テンソルに変換する
-        /// </summary>
-        private float[] ConvertStateToInputTensor(GameState state)
-        {
-            // 12x12xN チャンネル
-            // ch0: 自石(1), ch1: 相手石(1), ch2: 特殊石Type(Normalize), 
-            // ch3: 在庫(Extend), ch4: 在庫(Frozen), ... chN: 盤面サイズ
+				if (token.IsCancellationRequested) break;
 
-            // 仮実装 (12x12x2 = 自石/相手石)
-            int width = GameState.MAX_BOARD_SIZE;
-            int height = GameState.MAX_BOARD_SIZE;
-            int channels = 2; // (自石, 相手石)
-            float[] tensor = new float[width * height * channels];
+				// --- ゲーム終了 ---
+				float finalResult = ReversiSimulator.GetResult(state);
 
-            StoneColor self = state.CurrentPlayer;
-            StoneColor opponent = state.CurrentPlayer.Opponent();
+				// 棋譜データ(GameRecord)を構築
+				foreach (var (gameState, root) in mctsPolicies)
+				{
+					var sample = new TrainingSample
+					{
+						inputTensor = ConvertStateToInputTensor(gameState),
+						policy = ConvertPolicyToTensor(root),
+						value = (gameState.CurrentPlayer == StoneColor.Black)
+							? (finalResult == 0.5f ? 0.0f : (finalResult == 1.0f ? 1.0f : -1.0f))
+							: (finalResult == 0.5f ? 0.0f : (finalResult == 1.0f ? -1.0f : 1.0f))
+					};
+					gameRecord.samples.Add(sample);
+				}
 
-            for (int r = 0; r < height; r++)
-            {
-                for (int c = 0; c < width; c++)
-                {
-                    int idx = (r * width + c);
-                    if (state.Board[r, c] == self) tensor[idx] = 1.0f;
-                    if (state.Board[r, c] == opponent) tensor[idx + (width * height)] = 1.0f;
-                }
-            }
-            return tensor;
-        }
+				// ファイルに書き出し
+				string filePath = Path.Combine(dirPath, $"game_{gameIndex:D5}.json");
+				TrainingDataWriter.Write(gameRecord, filePath);
 
-        /// <summary>
-        /// MCTSの訪問回数をNNのPolicyテンソルに変換する
-        /// </summary>
-        private float[] ConvertPolicyToTensor(MCTSNode root)
-        {
-            // 12x12x5 (場所x石タイプ) の確率分布
+				// メインスレッドに進捗を報告
+				await UniTask.SwitchToMainThread(PlayerLoopTiming.Update, token);
+				Debug.Log($"ゲーム {gameIndex} 完了。 (進捗: {_gamesCompletedCount}/{_gamesToPlay})");
+				await UniTask.SwitchToThreadPool(); // スレッドプールのループに戻る
+			}
+		}
 
-            // 仮実装 (12x12x5 = 720)
-            float[] policy = new float[12 * 12 * 5];
-            if (root.Children.Count == 0) return policy;
+		/// <summary>
+		/// （GPU/NPUスレッド）評価キューを監視し、バッチ処理を実行するループ
+		/// </summary>
+		private async UniTask RunEvaluationBatchLoopAsync(CancellationToken token)
+		{
+			var nodesToEvaluate = new List<MCTSNode>(_maxBatchSize);
 
-            float totalVisits = root.Children.Sum(c => c.VisitCount);
+			while (!token.IsCancellationRequested)
+			{
+				// キューからノードを取得（バッチサイズ分、またはタイムアウトまで）
+				nodesToEvaluate.Clear();
 
-            foreach (var child in root.Children)
-            {
-                if (child.Action == null) continue;
+				// 最初の1個を取得（キューが空なら待機）
+				MCTSNode firstNode;
+				while (!_evaluationQueue.TryDequeue(out firstNode))
+				{
+					if (token.IsCancellationRequested) return;
+					await UniTask.Delay(1, cancellationToken: token); // 1ms待機
+				}
+				nodesToEvaluate.Add(firstNode);
 
-                int posIndex = child.Action.Position.Row * 12 + child.Action.Position.Col;
-                int typeIndex = (int)child.Action.Type; // 0~4
+				// 残りをバッチサイズまで取得
+				while (nodesToEvaluate.Count < _maxBatchSize && _evaluationQueue.TryDequeue(out MCTSNode node))
+				{
+					nodesToEvaluate.Add(node);
+				}
 
-                int index = (typeIndex * 144) + posIndex;
-                if (index < policy.Length)
-                {
-                    policy[index] = child.VisitCount / totalVisits;
-                }
-            }
-            return policy;
-        }
-    }
+				// バッチテンソルを作成
+				// (注：モデルの入力形状 [B,C,H,W] または [B,H,W,C] に合わせる)
+				// 仮：[Batch, 12, 12, 2]
+				var inputTensor = new Tensor(nodesToEvaluate.Count, 12, 12, 2);
+				for (int i = 0; i < nodesToEvaluate.Count; i++)
+				{
+					float[] stateData = ConvertStateToInputTensor(nodesToEvaluate[i].State);
+					for (int j = 0; j < stateData.Length; j++)
+					{
+						inputTensor[i, j] = stateData[j];
+					}
+				}
+
+				// GPU/NPUでバッチ推論を実行（同期）
+				_worker.Execute(inputTensor);
+
+				// 結果を取得
+				Tensor policyTensor = _worker.PeekOutput("Policy_Output_Name"); // モデルの出力名に合わせる
+				Tensor valueTensor = _worker.PeekOutput("Value_Output_Name");   // モデルの出力名に合わせる
+
+				// 結果を各ノードに設定（MCTSのBackpropagateが実行される）
+				for (int i = 0; i < nodesToEvaluate.Count; i++)
+				{
+					float[] policy = policyTensor.AsFloats();
+					float value = valueTensor.AsFloats()[0];
+
+					// SetEvaluationResultはスレッドセーフ（lockあり）
+					nodesToEvaluate[i].SetEvaluationResult(policy, value);
+				}
+
+				inputTensor.Dispose();
+				policyTensor.Dispose();
+				valueTensor.Dispose();
+			}
+		}
+
+		/// <summary>
+		/// MCTS探索を実行し、NN評価が必要なノードをキューに追加する
+		/// </summary>
+		private async UniTask<MCTSNode> SearchWithNN(GameState initialState, int iterations, CancellationToken token)
+		{
+			MCTSNode rootNode = new MCTSNode(initialState);
+
+			// 最初のノード（ルート）を評価待ちキューに追加
+			_evaluationQueue.Enqueue(rootNode);
+
+			// ルートノードの評価が完了するまで待機
+			await UniTask.WaitUntil(() => rootNode.IsEvaluated(), cancellationToken: token);
+
+			for (int i = 0; i < iterations; i++)
+			{
+				if (token.IsCancellationRequested) break;
+
+				MCTSNode node = rootNode;
+
+				// 1. Selection & Expansion
+				while (!node.IsLeafAndNotEvaluated() && !node.IsGameOver())
+				{
+					GameAction action = node.SelectActionByPUCT();
+					node = node.Expand(action);
+				}
+
+				// 2. 葉ノードに到達したら評価キューに追加
+				if (node.IsLeafAndNotEvaluated())
+				{
+					_evaluationQueue.Enqueue(node);
+				}
+			}
+			return rootNode;
+		}
+
+		// --- テンソル変換メソッド ---
+
+		/// <summary>
+		/// GameStateをNNの入力テンソル（float[]）に変換する
+		/// </summary>
+		private float[] ConvertStateToInputTensor(GameState state)
+		{
+			// 仮実装 (12x12x2 = 自石/相手石)
+			int width = GameState.MAX_BOARD_SIZE;
+			int height = GameState.MAX_BOARD_SIZE;
+			int channels = 2; // (自石, 相手石)
+			float[] tensor = new float[width * height * channels];
+
+			StoneColor self = state.CurrentPlayer;
+			StoneColor opponent = state.CurrentPlayer.Opponent();
+
+			for (int r = 0; r < height; r++)
+			{
+				for (int c = 0; c < width; c++)
+				{
+					int idx = (r * width + c);
+					if (state.Board[r, c] == self) tensor[idx] = 1.0f;
+					if (state.Board[r, c] == opponent) tensor[idx + (width * height)] = 1.0f;
+				}
+			}
+			return tensor;
+		}
+
+		/// <summary>
+		/// MCTSの訪問回数をNNのPolicyテンソル（float[]）に変換する
+		/// </summary>
+		private float[] ConvertPolicyToTensor(MCTSNode root)
+		{
+			// 仮実装 (12x12x5 = 720)
+			float[] policy = new float[12 * 12 * 5];
+			if (root.Children.Count == 0) return policy;
+
+			float totalVisits = root.Children.Sum(c => c.Value.GetVisitCount());
+			if (totalVisits == 0) return policy;
+
+			foreach (var kvp in root.Children)
+			{
+				GameAction action = kvp.Key;
+				MCTSNode child = kvp.Value;
+
+				int posIndex = action.Position.Row * 12 + action.Position.Col;
+				int typeIndex = (int)action.Type;
+
+				int index = (typeIndex * 144) + posIndex;
+				if (index >= 0 && index < policy.Length)
+				{
+					policy[index] = child.GetVisitCount() / totalVisits;
+				}
+			}
+			return policy;
+		}
+	}
 }

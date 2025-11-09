@@ -14,339 +14,339 @@ using static UnityEditor.PlayerSettings;
 
 namespace App.Reversi
 {
-    public class Board : MonoBehaviour
-    {
-        public const int MAX_BOARD_SIZE = 12;
-        public const int DEF_BOARD_SIZE = 8;
-        public const int DELAY_COUNT = 1;
+	public class Board : MonoBehaviour
+	{
+		public const int MAX_BOARD_SIZE = 12;
+		public const int DEF_BOARD_SIZE = 8;
+		public const int DELAY_COUNT = 1;
 
-        [SerializeField] private Cell _cellPrefab;
+		[SerializeField] private Cell _cellPrefab;
 
-        [Inject] private IPublisher<BoardInfo> _boardInfoPublisher;
-        [Inject] private IPublisher<PlaySoundEffectMessage> _soundPublisher;
-        [Inject] private IPublisher<PlayVFXMessage> _vfxPublisher;
+		[Inject] private IPublisher<BoardInfo> _boardInfoPublisher;
+		[Inject] private IPublisher<PlaySoundEffectMessage> _soundPublisher;
+		[Inject] private IPublisher<PlayVFXMessage> _vfxPublisher;
 
-        [Inject] private ISubscriber<RequestPutStoneMessage> _requestSubscriber;
+		[Inject] private ISubscriber<RequestPutStoneMessage> _requestSubscriber;
 
-        [Inject] private IObjectResolver _resolver;
+		[Inject] private IObjectResolver _resolver;
 
-        public Func<int, UniTask> OnBoardSizeChanged;
-        public Dictionary<StoneColor, int> StoneCount;
+		public Func<int, UniTask> OnBoardSizeChanged;
+		public Dictionary<StoneColor, int> StoneCount;
 
-        public Cell[,] BoardCells { get; private set; }
-        /// <summary> 現在のボードサイズ（GameControllerがカメラ制御で参照） </summary>
-        public int CurrentBoardSize { get; private set; }
+		public Cell[,] BoardCells { get; private set; }
+		/// <summary> 現在のボードサイズ（GameControllerがカメラ制御で参照） </summary>
+		public int CurrentBoardSize { get; private set; }
 
-        // TODO: いずれカウントをプレイヤーが指定できるようにしたい
-        /// <summary> 遅延反転石のカウントダウン用スタック </summary>
-        public List<ReverseCountDown> DelayReverseStack { get; private set; }
+		// TODO: いずれカウントをプレイヤーが指定できるようにしたい
+		/// <summary> 遅延反転石のカウントダウン用スタック </summary>
+		public List<ReverseCountDown> DelayReverseStack { get; private set; }
 
-        /// <summary> 現在配置可能なマスのリスト </summary>
-        private HashSet<Position> _availableMoves = new HashSet<Position>();
+		/// <summary> 現在配置可能なマスのリスト </summary>
+		private HashSet<Position> _availableMoves = new HashSet<Position>();
 
-        /// <summary>
-        /// 角の座標を返す
-        /// </summary>
-        /// <param name="boardSize"></param>
-        /// <returns>0:左上、1:右上、2:左下、3:右下</returns>
-        public static Position[] GetCorners(int boardSize)
-        {
-            Position[] corner = new Position[4];
-            int diff = (MAX_BOARD_SIZE - boardSize) / 2;
-            corner[0] = new Position(diff, diff);
-            corner[1] = new Position(diff, MAX_BOARD_SIZE - diff - 1);
-            corner[2] = new Position(MAX_BOARD_SIZE - diff - 1, diff);
-            corner[3] = new Position(MAX_BOARD_SIZE - diff - 1, MAX_BOARD_SIZE - diff - 1);
-            return corner;
-        }
+		/// <summary>
+		/// 角の座標を返す
+		/// </summary>
+		/// <param name="boardSize"></param>
+		/// <returns>0:左上、1:右上、2:左下、3:右下</returns>
+		public static Position[] GetCorners(int boardSize)
+		{
+			Position[] corner = new Position[4];
+			int diff = (MAX_BOARD_SIZE - boardSize) / 2;
+			corner[0] = new Position(diff, diff);
+			corner[1] = new Position(diff, MAX_BOARD_SIZE - diff - 1);
+			corner[2] = new Position(MAX_BOARD_SIZE - diff - 1, diff);
+			corner[3] = new Position(MAX_BOARD_SIZE - diff - 1, MAX_BOARD_SIZE - diff - 1);
+			return corner;
+		}
 
 
-        private void Awake()
-        {
-            // 石配置リクエストの登録
-            _requestSubscriber.Subscribe(OnPutRequest);
+		private void Awake()
+		{
+			// 石配置リクエストの登録
+			_requestSubscriber.Subscribe(OnPutRequest);
 
-            // 盤の初期化
-            BoardCells = new Cell[MAX_BOARD_SIZE, MAX_BOARD_SIZE];
-            for (int row = 0; row < MAX_BOARD_SIZE; row++)
-            {
-                for (int col = 0; col < MAX_BOARD_SIZE; col++)
-                {
-                    BoardCells[row, col] = _resolver.Instantiate(_cellPrefab, new Vector3(col, 0, row), Quaternion.identity);
-                }
-            }
+			// 盤の初期化
+			BoardCells = new Cell[MAX_BOARD_SIZE, MAX_BOARD_SIZE];
+			for (int row = 0; row < MAX_BOARD_SIZE; row++)
+			{
+				for (int col = 0; col < MAX_BOARD_SIZE; col++)
+				{
+					BoardCells[row, col] = _resolver.Instantiate(_cellPrefab, new Vector3(col, 0, row), Quaternion.identity);
+				}
+			}
 
-            // 初期配置
-            StoneCount = new Dictionary<StoneColor, int>
-            {
-                { StoneColor.Black, 0 },
-                { StoneColor.White, 0 }
-            };
-            _ = Put(StoneColor.Black, StoneType.Normal, new Position(5, 5));
-            _ = Put(StoneColor.Black, StoneType.Normal, new Position(6, 6));
-            _ = Put(StoneColor.White, StoneType.Normal, new Position(6, 5));
-            _ = Put(StoneColor.White, StoneType.Normal, new Position(5, 6));
+			// 初期配置
+			StoneCount = new Dictionary<StoneColor, int>
+			{
+				{ StoneColor.Black, 0 },
+				{ StoneColor.White, 0 }
+			};
+			_ = Put(StoneColor.Black, StoneType.Normal, new Position(5, 5));
+			_ = Put(StoneColor.Black, StoneType.Normal, new Position(6, 6));
+			_ = Put(StoneColor.White, StoneType.Normal, new Position(6, 5));
+			_ = Put(StoneColor.White, StoneType.Normal, new Position(5, 6));
 
-            // 他変数の初期化
-            CurrentBoardSize = DEF_BOARD_SIZE;
-            DelayReverseStack = new List<ReverseCountDown>();
-        }
+			// 他変数の初期化
+			CurrentBoardSize = DEF_BOARD_SIZE;
+			DelayReverseStack = new List<ReverseCountDown>();
+		}
 
-        /// <summary>
-        /// 石の配置リクエストを受け取り、非同期で処理を実行する
-        /// </summary>
-        private void OnPutRequest(RequestPutStoneMessage msg)
-        {
-            // PutProcessはUniTaskを返すため、Forget()で実行する
-            PutProcess(msg.Player, msg.Type, msg.Position).Forget();
-        }
+		/// <summary>
+		/// 石の配置リクエストを受け取り、非同期で処理を実行する
+		/// </summary>
+		private void OnPutRequest(RequestPutStoneMessage msg)
+		{
+			// PutProcessはUniTaskを返すため、Forget()で実行する
+			PutProcess(msg.Player, msg.Type, msg.Position).Forget();
+		}
 
-        /// <summary>
-        /// 盤を押したときの一連の処理を行う
-        /// </summary>
-        /// <param name="putPlayer">誰が</param>
-        /// <param name="putType">何を</param>
-        /// <param name="clickPos">どこに置いた</param>
-        /// <returns> 置けなかった場合nullを返す </returns>
-        public async UniTask PutProcess(StoneColor putPlayer, StoneType putType, Position clickPos)
-        {
-            // はじめ逆の色で置くタイプの石を処理
-            StoneColor putColor = putPlayer;
-            if (putType.IsReverseType())
-            {
-                putColor = putPlayer.Opponent();
-            }
+		/// <summary>
+		/// 盤を押したときの一連の処理を行う
+		/// </summary>
+		/// <param name="putPlayer">誰が</param>
+		/// <param name="putType">何を</param>
+		/// <param name="clickPos">どこに置いた</param>
+		/// <returns> 置けなかった場合nullを返す </returns>
+		public async UniTask PutProcess(StoneColor putPlayer, StoneType putType, Position clickPos)
+		{
+			// はじめ逆の色で置くタイプの石を処理
+			StoneColor putColor = putPlayer;
+			if (putType.IsReverseType())
+			{
+				putColor = putPlayer.Opponent();
+			}
 
-            List<Position> reversePos = FindReversePos(putColor, clickPos);
+			List<Position> reversePos = FindReversePos(putColor, clickPos);
 
-            // 埋まっているマス・ひっくり返す場所がない場合は、置けない
-            if (BoardCells[clickPos.Row, clickPos.Col].Color != StoneColor.None)
-            {
-                // GameController側でCanPutチェックしているので、通常ここには来ない
-                Debug.LogWarning("既に石が置かれているマスが指定されました。");
-                return;
-            }
+			// 埋まっているマス・ひっくり返す場所がない場合は、置けない
+			if (BoardCells[clickPos.Row, clickPos.Col].Color != StoneColor.None)
+			{
+				// GameController側でCanPutチェックしているので、通常ここには来ない
+				Debug.LogWarning("既に石が置かれているマスが指定されました。");
+				return;
+			}
 
-            await Put(putColor, putType, clickPos);
-            await Flip(reversePos);
+			await Put(putColor, putType, clickPos);
+			await Flip(reversePos);
 
-            // 遅延反転の処理
-            for (int i = 0; i < DelayReverseStack.Count; i++)
-            {
-                DelayReverseStack[i].Delay--;
-                if (DelayReverseStack[i].Delay <= 0)
-                {
-                    Position pos = DelayReverseStack[i].Pos;
-                    StoneColor afterColor = BoardCells[pos.Row, pos.Col].Color.Opponent();
-                    reversePos = FindReversePos(afterColor, pos);
-                    _soundPublisher.Publish(new PlaySoundEffectMessage(SoundEffectType.Reverse));
-                    _vfxPublisher.Publish(new PlayVFXMessage(VFXType.Reverse, BoardCells[pos.Row, pos.Col].transform.position));
-                    await Flip(pos);
-                    await Flip(reversePos);
-                    DelayReverseStack.RemoveAt(i);
-                }
-            }
+			// 遅延反転の処理
+			for (int i = 0; i < DelayReverseStack.Count; i++)
+			{
+				DelayReverseStack[i].Delay--;
+				if (DelayReverseStack[i].Delay <= 0)
+				{
+					Position pos = DelayReverseStack[i].Pos;
+					StoneColor afterColor = BoardCells[pos.Row, pos.Col].Color.Opponent();
+					reversePos = FindReversePos(afterColor, pos);
+					_soundPublisher.Publish(new PlaySoundEffectMessage(SoundEffectType.Reverse));
+					_vfxPublisher.Publish(new PlayVFXMessage(VFXType.Reverse, BoardCells[pos.Row, pos.Col].transform.position));
+					await Flip(pos);
+					await Flip(reversePos);
+					DelayReverseStack.RemoveAt(i);
+				}
+			}
 
-            // 特殊石の処理
-            switch (putType)
-            {
-                case StoneType.Extend:
-                    _soundPublisher.Publish(new PlaySoundEffectMessage(SoundEffectType.Extend));
-                    _vfxPublisher.Publish(new PlayVFXMessage(VFXType.Extend, BoardCells[clickPos.Row, clickPos.Col].transform.position));
+			// 特殊石の処理
+			switch (putType)
+			{
+				case StoneType.Extend:
+					_soundPublisher.Publish(new PlaySoundEffectMessage(SoundEffectType.Extend));
+					_vfxPublisher.Publish(new PlayVFXMessage(VFXType.Extend, BoardCells[clickPos.Row, clickPos.Col].transform.position));
 
-                    CurrentBoardSize = Math.Min(CurrentBoardSize + 2, MAX_BOARD_SIZE);
-                    float size = (float)(CurrentBoardSize * 0.1 + 0.004);
-                    await UniTask.WhenAll(
-                        transform.DOScale(new Vector3(size, 1, size), 1).ToUniTask(),
-                        OnBoardSizeChanged.Invoke(CurrentBoardSize)
-                    );
-                    break;
+					CurrentBoardSize = Math.Min(CurrentBoardSize + 2, MAX_BOARD_SIZE);
+					float size = (float)(CurrentBoardSize * 0.1 + 0.004);
+					await UniTask.WhenAll(
+						transform.DOScale(new Vector3(size, 1, size), 1).ToUniTask(),
+						OnBoardSizeChanged.Invoke(CurrentBoardSize)
+					);
+					break;
 
-                case StoneType.Reverse:
-                    _soundPublisher.Publish(new PlaySoundEffectMessage(SoundEffectType.Reverse));
-                    _vfxPublisher.Publish(new PlayVFXMessage(VFXType.Reverse, BoardCells[clickPos.Row, clickPos.Col].transform.position));
+				case StoneType.Reverse:
+					_soundPublisher.Publish(new PlaySoundEffectMessage(SoundEffectType.Reverse));
+					_vfxPublisher.Publish(new PlayVFXMessage(VFXType.Reverse, BoardCells[clickPos.Row, clickPos.Col].transform.position));
 
-                    StoneColor afterColor = BoardCells[clickPos.Row, clickPos.Col].Color.Opponent();
-                    reversePos = FindReversePos(afterColor, clickPos);
-                    await Flip(clickPos);
-                    await Flip(reversePos);
-                    break;
+					StoneColor afterColor = BoardCells[clickPos.Row, clickPos.Col].Color.Opponent();
+					reversePos = FindReversePos(afterColor, clickPos);
+					await Flip(clickPos);
+					await Flip(reversePos);
+					break;
 
-                case StoneType.DelayReverse:
-                    DelayReverseStack.Add(new ReverseCountDown(clickPos, DELAY_COUNT));
-                    break;
-            }
+				case StoneType.DelayReverse:
+					DelayReverseStack.Add(new ReverseCountDown(clickPos, DELAY_COUNT));
+					break;
+			}
 
-            // UI更新のために情報を送信
-            _boardInfoPublisher.Publish(new BoardInfo(putPlayer, putColor, putType, reversePos, StoneCount));
-        }
+			// UI更新のために情報を送信
+			_boardInfoPublisher.Publish(new BoardInfo(putPlayer, putColor, putType, reversePos, StoneCount));
+		}
 
-        private async UniTask Put(StoneColor putColor, StoneType putType, Position putPos)
-        {
-            if (putType == StoneType.None)
-            {
-                Debug.LogError("putTypeがNoneになっています");
-                return;
-            }
+		private async UniTask Put(StoneColor putColor, StoneType putType, Position putPos)
+		{
+			if (putType == StoneType.None)
+			{
+				Debug.LogError("putTypeがNoneになっています");
+				return;
+			}
 
-            StoneCount[putColor]++;
-            await BoardCells[putPos.Row, putPos.Col].Put(putColor, putType);
-        }
+			StoneCount[putColor]++;
+			await BoardCells[putPos.Row, putPos.Col].Put(putColor, putType);
+		}
 
-        private async UniTask Flip(Position pos)
-        {
-            StoneCount[BoardCells[pos.Row, pos.Col].Color]--;
-            StoneCount[BoardCells[pos.Row, pos.Col].Color.Opponent()]++;
-            await BoardCells[pos.Row, pos.Col].Flip();
-        }
+		private async UniTask Flip(Position pos)
+		{
+			StoneCount[BoardCells[pos.Row, pos.Col].Color]--;
+			StoneCount[BoardCells[pos.Row, pos.Col].Color.Opponent()]++;
+			await BoardCells[pos.Row, pos.Col].Flip();
+		}
 
-        private async UniTask Flip(List<Position> posList)
-        {
-            await UniTask.WhenAll(posList.Select(pos => Flip(pos)));
-        }
+		private async UniTask Flip(List<Position> posList)
+		{
+			await UniTask.WhenAll(posList.Select(pos => Flip(pos)));
+		}
 
-        /// <summary>
-        /// 全てのハイライトをオフにする
-        /// </summary>
-        public void HideHighlight()
-        {
-            foreach (var cell in BoardCells)
-            {
-                cell.SetHighlight(false);
-            }
-        }
+		/// <summary>
+		/// 全てのハイライトをオフにする
+		/// </summary>
+		public void HideHighlight()
+		{
+			foreach (var cell in BoardCells)
+			{
+				cell.SetHighlight(false);
+			}
+		}
 
-        /// <summary>
-        /// 現在配置可能なマス（ハイライトされているマス）のリストを返す
-        /// </summary>
-        /// <returns></returns>
-        public List<Position> GetAvailableMoves()
-        {
-            return _availableMoves.ToList();
-        }
+		/// <summary>
+		/// 現在配置可能なマス（ハイライトされているマス）のリストを返す
+		/// </summary>
+		/// <returns></returns>
+		public List<Position> GetAvailableMoves()
+		{
+			return _availableMoves.ToList();
+		}
 
-        /// <summary>
-        /// 現在配置可能な場所（_availableMoves）の更新と、ハイライトのオンとオフを行う
-        /// </summary>
-        /// <param name="nextColor"></param>
-        /// <param name="nextType"></param>
-        /// <returns>ハイライトの数</returns>
-        public int UpdateHighlight(StoneColor nextColor, StoneType nextType)
-        {
-            int availableCount = 0;
-            _availableMoves.Clear();
+		/// <summary>
+		/// 現在配置可能な場所（_availableMoves）の更新と、ハイライトのオンとオフを行う
+		/// </summary>
+		/// <param name="nextColor"></param>
+		/// <param name="nextType"></param>
+		/// <returns>ハイライトの数</returns>
+		public int UpdateHighlight(StoneColor nextColor, StoneType nextType)
+		{
+			int availableCount = 0;
+			_availableMoves.Clear();
 
-            foreach (var cell in BoardCells)
-            {
-                if (!IsInBoard(cell.Row, cell.Col))
-                {
-                    continue;
-                }
+			foreach (var cell in BoardCells)
+			{
+				if (!IsInBoard(cell.Row, cell.Col))
+				{
+					continue;
+				}
 
-                if (cell.isPlased)
-                {
-                    continue;
-                }
+				if (cell.isPlased)
+				{
+					continue;
+				}
 
-                Position checkPos = new Position(cell.Row, cell.Col);
-                List<Position> reversePos = FindReversePos(nextColor, checkPos);
-                if (reversePos.Count > 0)
-                {
-                    cell.SetHighlight(true);
-                    _availableMoves.Add(checkPos);
-                    availableCount++;
-                    continue;
-                }
-                // 逆の色で置くタイプの石の場合のチェック
-                if (nextType.IsReverseType())
-                {
-                    reversePos = FindReversePos(nextColor.Opponent(), checkPos);
+				Position checkPos = new Position(cell.Row, cell.Col);
+				List<Position> reversePos = FindReversePos(nextColor, checkPos);
+				if (reversePos.Count > 0)
+				{
+					cell.SetHighlight(true);
+					_availableMoves.Add(checkPos);
+					availableCount++;
+					continue;
+				}
+				// 逆の色で置くタイプの石の場合のチェック
+				if (nextType.IsReverseType())
+				{
+					reversePos = FindReversePos(nextColor.Opponent(), checkPos);
 
-                    if (reversePos.Count > 0)
-                    {
-                        cell.SetHighlight(true);
-                        _availableMoves.Add(checkPos);
-                        availableCount++;
-                        continue;
-                    }
-                }
-                cell.SetHighlight(false);
-            }
-            return availableCount;
-        }
+					if (reversePos.Count > 0)
+					{
+						cell.SetHighlight(true);
+						_availableMoves.Add(checkPos);
+						availableCount++;
+						continue;
+					}
+				}
+				cell.SetHighlight(false);
+			}
+			return availableCount;
+		}
 
-        /// <summary>
-        /// 指定したマスに石を置けるか（ハイライトされているか）を返す
-        /// </summary>
-        public bool CanPut(Position pos)
-        {
-            return _availableMoves.Contains(pos);
-        }
+		/// <summary>
+		/// 指定したマスに石を置けるか（ハイライトされているか）を返す
+		/// </summary>
+		public bool CanPut(Position pos)
+		{
+			return _availableMoves.Contains(pos);
+		}
 
-        public StoneColor GetWinColor()
-        {
-            if (StoneCount[StoneColor.Black] > StoneCount[StoneColor.White])
-            {
-                return StoneColor.Black;
-            }
-            else if (StoneCount[StoneColor.Black] < StoneCount[StoneColor.White])
-            {
-                return StoneColor.White;
-            }
-            else
-            {
-                return StoneColor.None; // 引き分け
-            }
-        }
+		public StoneColor GetWinColor()
+		{
+			if (StoneCount[StoneColor.Black] > StoneCount[StoneColor.White])
+			{
+				return StoneColor.Black;
+			}
+			else if (StoneCount[StoneColor.Black] < StoneCount[StoneColor.White])
+			{
+				return StoneColor.White;
+			}
+			else
+			{
+				return StoneColor.None; // 引き分け
+			}
+		}
 
-        private List<Position> FindReversePos(StoneColor putColor, Position putPos)
-        {
-            List<Position> dir = new List<Position> {
-                new Position(-1, -1),
-                new Position(-1, 0),
-                new Position(-1, 1),
-                new Position(0, -1),
-                new Position(0, 1),
-                new Position(1, -1),
-                new Position(1, 0),
-                new Position(1, 1)
-            };
+		private List<Position> FindReversePos(StoneColor putColor, Position putPos)
+		{
+			List<Position> dir = new List<Position> {
+				new Position(-1, -1),
+				new Position(-1, 0),
+				new Position(-1, 1),
+				new Position(0, -1),
+				new Position(0, 1),
+				new Position(1, -1),
+				new Position(1, 0),
+				new Position(1, 1)
+			};
 
-            var reversePos = new List<Position>();
-            foreach (var d in dir)
-            {
-                reversePos.AddRange(FindReversePosInDir(putColor, putPos, d.Row, d.Col));
-            }
-            return reversePos;
-        }
+			var reversePos = new List<Position>();
+			foreach (var d in dir)
+			{
+				reversePos.AddRange(FindReversePosInDir(putColor, putPos, d.Row, d.Col));
+			}
+			return reversePos;
+		}
 
-        private List<Position> FindReversePosInDir(StoneColor putColor, Position putPos, int dRow, int dCol)
-        {
-            var reversePos = new List<Position>();
-            var currentRow = putPos.Row + dRow;
-            var currentCol = putPos.Col + dCol;
-            while (IsInBoard(currentRow, currentCol))
-            {
-                if (BoardCells[currentRow, currentCol].Color == StoneColor.None)
-                {
-                    break;
-                }
-                if (BoardCells[currentRow, currentCol].Color == putColor)
-                {
-                    return reversePos;
-                }
-                reversePos.Add(new Position(currentRow, currentCol));
-                currentRow += dRow;
-                currentCol += dCol;
-            }
-            return new List<Position>();
-        }
+		private List<Position> FindReversePosInDir(StoneColor putColor, Position putPos, int dRow, int dCol)
+		{
+			var reversePos = new List<Position>();
+			var currentRow = putPos.Row + dRow;
+			var currentCol = putPos.Col + dCol;
+			while (IsInBoard(currentRow, currentCol))
+			{
+				if (BoardCells[currentRow, currentCol].Color == StoneColor.None)
+				{
+					break;
+				}
+				if (BoardCells[currentRow, currentCol].Color == putColor)
+				{
+					return reversePos;
+				}
+				reversePos.Add(new Position(currentRow, currentCol));
+				currentRow += dRow;
+				currentCol += dCol;
+			}
+			return new List<Position>();
+		}
 
-        private bool IsInBoard(int row, int col)
-        {
-            int center = MAX_BOARD_SIZE / 2;
-            int halfSize = CurrentBoardSize / 2;
-            return row >= center - halfSize && row < center + halfSize && col >= center - halfSize && col < center + halfSize;
-        }
-    }
+		private bool IsInBoard(int row, int col)
+		{
+			int center = MAX_BOARD_SIZE / 2;
+			int halfSize = CurrentBoardSize / 2;
+			return row >= center - halfSize && row < center + halfSize && col >= center - halfSize && col < center + halfSize;
+		}
+	}
 }

@@ -7276,7 +7276,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 68726b6ebbb5de14aa81544ae557c6e1, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::App.Reversi.Core.AIAgent
-  _thinkingTimeMilliseconds: 5000
+  _thinkingTimeMilliseconds: 1000
 --- !u!114 &1806809724
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -7290,7 +7290,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::App.Reversi.AI.SelfPlayManager
   _gamesToPlay: 1000
-  _mctsIterations: 1000
+  _mctsIterations: 800
+  _maxParallelGames: 0
   _outputDirectory: TrainingData
 --- !u!1 &1810285163
 GameObject:
