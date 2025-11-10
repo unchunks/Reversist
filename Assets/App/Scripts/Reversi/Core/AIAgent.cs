@@ -10,8 +10,9 @@ namespace App.Reversi.Core
 {
 	public class AIAgent : MonoBehaviour
 	{
-		[Header("AI Settings")]
-		[SerializeField] private int _thinkingTimeMilliseconds = 1000; // 思考時間
+		[Header("AI設定")]
+		[Tooltip("AIが1手にかけるMCTSの反復回数")]
+		[SerializeField] private int _mctsIterationsPerMove = 2000;
 
 		[Inject] private Board _board;
 		[Inject] private PlayerInventory _playerInventory;
@@ -67,11 +68,11 @@ namespace App.Reversi.Core
 			GameState currentState = BuildCurrentGameState();
 
 			// MCTS実行（メインスレッドをブロックしないよう、別スレッドで実行）
-			GameAction bestAction = await UniTask.RunOnThreadPool(() =>
-			{
-				// MCTSに思考させる
-				return MCTS.Search(currentState, _thinkingTimeMilliseconds);
-			}, cancellationToken: this.GetCancellationTokenOnDestroy());
+			GameAction bestAction = await AlphaZeroSearcher.FindBestMove(
+				currentState,
+				_mctsIterationsPerMove,
+				this.GetCancellationTokenOnDestroy()
+			);
 
 			// 思考が終わったことを通知
 			Debug.Log("AI思考終了");
@@ -127,6 +128,10 @@ namespace App.Reversi.Core
 					}
 				}
 			}
+
+			// AIシミュレータが使用する「有効な手のキャッシュ」をクリア
+			state.ValidActionsCache = null;
+
 			return state;
 		}
 	}

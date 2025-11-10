@@ -7060,6 +7060,7 @@ GameObject:
   - component: {fileID: 1806809722}
   - component: {fileID: 1806809723}
   - component: {fileID: 1806809724}
+  - component: {fileID: 1806809725}
   m_Layer: 0
   m_Name: Game System
   m_TagString: Untagged
@@ -7276,7 +7277,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 68726b6ebbb5de14aa81544ae557c6e1, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::App.Reversi.Core.AIAgent
-  _thinkingTimeMilliseconds: 1000
+  _mctsIterationsPerMove: 2000
 --- !u!114 &1806809724
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -7289,13 +7290,25 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 94c6b5c3ab8cf5143955a12d1b366486, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::App.Reversi.AI.SelfPlayManager
-  _mode: 0
+  _mode: 1
   _gamesToPlay: 1000
   _mctsIterationsPerMove: 1000
-  _nnModelAsset: {fileID: 0}
-  _maxBatchSize: 64
   _parallelGames: 32
   _outputDirectory: TrainingData
+--- !u!114 &1806809725
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1806809714}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ff0fa252a027abe48adfceec19b66920, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::App.Reversi.AI.NNEvaluatorService
+  _nnModelAsset: {fileID: 5022602860645237092, guid: 635631afa60134c46ae18585274cdd54, type: 3}
+  _maxBatchSize: 64
 --- !u!1 &1810285163
 GameObject:
   m_ObjectHideFlags: 0

@@ -32,20 +32,11 @@ namespace App.Reversi.AI
 		[SerializeField] private int _gamesToPlay = 1000;
 		[SerializeField] private int _mctsIterationsPerMove = 1000;
 
-		[Header("NNモデル (NNEvaluationモード専用)")]
-		[SerializeField] private NNModel _nnModelAsset;
-		[SerializeField] private int _maxBatchSize = 64;
-
 		[Header("並列設定")]
 		[Tooltip("同時に実行するゲーム数。CPUコア数（ProcessorCount）に合わせるのが最適")]
 		[SerializeField] private int _parallelGames = 32;
 
 		[SerializeField] private string _outputDirectory = "TrainingData";
-
-		// --- NN(GPU/NPU)推論用リソース ---
-		private Model _runtimeModel;
-		private IWorker _worker;
-		private ConcurrentQueue<MCTSNode_AlphaZero> _evaluationQueue;
 
 		// --- 共通リソース ---
 		private CancellationTokenSource _cts;
@@ -87,19 +78,19 @@ namespace App.Reversi.AI
 
 				if (_mode == LearningMode.ImproveModel_NNEvaluation)
 				{
-					if (!await SetupBarracudaWorkerAsync()) return;
-					_evaluationQueue = new ConcurrentQueue<MCTSNode_AlphaZero>();
-
-					UniTask evaluationTask = RunEvaluationBatchLoopAsync(_cts.Token);
-
-					// evaluationTaskもリストに追加する
-					gameTasks.Add(evaluationTask);
+					// Barracudaワーカーのセットアップを待つ代わりに、
+					// NNEvaluatorService が利用可能（初期化完了）か確認する
+					if (NNEvaluatorService.Instance == null)
+					{
+						Debug.LogError("NNEvaluatorService がシーンに存在しません。");
+						return;
+					}
+					// (NNEvaluatorServiceのStart()が自動で評価ループを開始する)
 
 					for (int i = 0; i < _parallelGames; i++)
 					{
 						gameTasks.Add(RunGameLoop_AlphaZero(dirPath, _cts.Token));
 					}
-
 					await UniTask.WhenAll(gameTasks);
 				}
 				else
@@ -121,7 +112,9 @@ namespace App.Reversi.AI
 			}
 			finally
 			{
-				CleanupResources();
+				_cts?.Dispose();
+				_cts = null;
+				// (BarracudaのリソースはNNEvaluatorServiceが管理)
 				Debug.Log("自己対戦プロセスが終了しました。");
 			}
 		}
@@ -247,14 +240,16 @@ namespace App.Reversi.AI
 
 				GameState state = new GameState();
 				var gameRecord = new GameRecord();
-				var mctsPolicies = new List<(GameState state, MCTSNode_AlphaZero root)>();
+
+				// MCTSルートノードを一時的に保持するリスト (Policy計算用)
+				var mctsPolicyRoots = new List<(GameState state, MCTSNode_AlphaZero root)>();
 
 				while (!state.IsGameOver && !token.IsCancellationRequested)
 				{
 					MCTSNode_AlphaZero rootNode = await SearchWithNN(state, _mctsIterationsPerMove, token);
 					if (token.IsCancellationRequested) break;
 
-					mctsPolicies.Add((new GameState(state), rootNode));
+					mctsPolicyRoots.Add((new GameState(state), rootNode));
 
 					if (rootNode.Children.Count == 0) break;
 					GameAction bestAction = rootNode.Children.OrderByDescending(kvp => kvp.Value.GetVisitCount()).First().Key;
@@ -266,7 +261,7 @@ namespace App.Reversi.AI
 
 				float finalResult = ReversiSimulator.GetResult(state);
 
-				foreach (var (gameState, root) in mctsPolicies)
+				foreach (var (gameState, root) in mctsPolicyRoots)
 				{
 					var sample = new TrainingSample
 					{
@@ -280,7 +275,7 @@ namespace App.Reversi.AI
 				}
 
 				string filePath = Path.Combine(dirPath, $"game_nn_{gameIndex:D5}.json");
-				TrainingDataWriter.Write(gameRecord, filePath); // ▼▼▼ 修正 (CS0103): 'gameRecord' を使用
+				TrainingDataWriter.Write(gameRecord, filePath);
 
 				await UniTask.SwitchToMainThread(PlayerLoopTiming.Update, token);
 				Debug.Log($"[AlphaZero] ゲーム {gameIndex} 完了。 (進捗: {_gamesCompletedCount}/{_gamesToPlay})");
@@ -288,74 +283,12 @@ namespace App.Reversi.AI
 			}
 		}
 
-		private async UniTask RunEvaluationBatchLoopAsync(CancellationToken token)
-		{
-			var nodesToEvaluate = new List<MCTSNode_AlphaZero>(_maxBatchSize);
-
-			while (!token.IsCancellationRequested)
-			{
-				nodesToEvaluate.Clear();
-
-				MCTSNode_AlphaZero firstNode;
-				while (!_evaluationQueue.TryDequeue(out firstNode))
-				{
-					if (token.IsCancellationRequested) return;
-					await UniTask.Delay(1, cancellationToken: token);
-				}
-				nodesToEvaluate.Add(firstNode);
-
-				while (nodesToEvaluate.Count < _maxBatchSize && _evaluationQueue.TryDequeue(out MCTSNode_AlphaZero node))
-				{
-					nodesToEvaluate.Add(node);
-				}
-
-				// [Batch, 12, 12, 2]
-				using (var inputTensor = new Tensor(nodesToEvaluate.Count, 12, 12, 2))
-				{
-					for (int i = 0; i < nodesToEvaluate.Count; i++)
-					{
-						float[] stateData = ConvertStateToInputTensor(nodesToEvaluate[i].State);
-						// 1D (288) -> 4D (1, 12, 12, 2)
-						for (int h = 0; h < 12; h++)
-							for (int w = 0; w < 12; w++)
-								for (int ch = 0; ch < 2; ch++)
-								{
-									inputTensor[i, h, w, ch] = stateData[(ch * 144) + (h * 12) + w];
-								}
-					}
-
-					_worker.Execute(inputTensor);
-
-					Tensor policyTensor = _worker.PeekOutput("Policy_Output_Name");
-					Tensor valueTensor = _worker.PeekOutput("Value_Output_Name");
-
-					// (注: モデルのPolicy出力が [Batch, 720]、Value出力が [Batch, 1] と仮定)
-					int policySize = 12 * 12 * 5; // 720
-					float[] allPolicyData = policyTensor.AsFloats();
-					float[] allValueData = valueTensor.AsFloats();
-
-					for (int i = 0; i < nodesToEvaluate.Count; i++)
-					{
-						// policyスライス
-						float[] policy = new float[policySize];
-						Array.Copy(allPolicyData, i * policySize, policy, 0, policySize);
-
-						// valueスライス
-						float value = allValueData[i];
-
-						nodesToEvaluate[i].SetEvaluationResult(policy, value);
-					}
-
-					policyTensor.Dispose();
-					valueTensor.Dispose();
-				}
-			}
-		}
-
 		private async UniTask<MCTSNode_AlphaZero> SearchWithNN(GameState initialState, int iterations, CancellationToken token)
 		{
 			MCTSNode_AlphaZero rootNode = new MCTSNode_AlphaZero(initialState);
-			_evaluationQueue.Enqueue(rootNode);
+
+			NNEvaluatorService.Instance.EnqueueNode(rootNode);
+
 			await UniTask.WaitUntil(() => rootNode.IsEvaluated(), cancellationToken: token);
 
 			for (int i = 0; i < iterations; i++)
@@ -373,7 +306,7 @@ namespace App.Reversi.AI
 
 				if (node.IsLeafAndNotEvaluated())
 				{
-					_evaluationQueue.Enqueue(node);
+					NNEvaluatorService.Instance.EnqueueNode(node);
 				}
 			}
 			return rootNode;
@@ -382,49 +315,6 @@ namespace App.Reversi.AI
 		#endregion
 
 		#region 共通ヘルパー
-
-		private async UniTask<bool> SetupBarracudaWorkerAsync()
-		{
-			try
-			{
-				Debug.Log("Barracudaワーカーの作成を開始します (非同期)...");
-
-				// 最も重い処理をスレッドプールに移動
-				(Model runtimeModel, IWorker worker) result = await UniTask.RunOnThreadPool(() =>
-				{
-					var model = ModelLoader.Load(_nnModelAsset);
-					var wrkr = WorkerFactory.CreateWorker(WorkerFactory.Type.Auto, model);
-					return (model, wrkr);
-				}, cancellationToken: _cts.Token);
-
-				_runtimeModel = result.runtimeModel;
-				_worker = result.worker;
-
-				// ログはメインスレッドで実行
-				Debug.Log($"Barracudaワーカーを {WorkerFactory.Type.Auto} で作成しました。");
-				return true;
-			}
-			catch (OperationCanceledException)
-			{
-				Debug.LogWarning("Barracudaワーカーの作成がキャンセルされました。");
-				return false;
-			}
-			catch (Exception e)
-			{
-				Debug.LogError($"NNモデルのロードまたはワーカーの作成に失敗しました: {e.Message}");
-				if (_cts != null) _cts.Cancel();
-				return false;
-			}
-		}
-
-		private void CleanupResources()
-		{
-			_worker?.Dispose();
-			_worker = null;
-			_runtimeModel = null; // ModelはDispose不要
-			_cts?.Dispose();
-			_cts = null;
-		}
 
 		private float[] ConvertStateToInputTensor(GameState state)
 		{
@@ -497,8 +387,6 @@ namespace App.Reversi.AI
 			return policy;
 		}
 
-		#endregion
-
 		/// <summary>
 		/// メインスレッドで定期的に進捗をログ出力する
 		/// （メインスレッドがフリーズしていないことを確認する）
@@ -531,5 +419,7 @@ namespace App.Reversi.AI
 				}
 			}
 		}
+
+		#endregion
 	}
 }

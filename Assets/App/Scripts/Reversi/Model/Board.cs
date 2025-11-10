@@ -82,10 +82,10 @@ namespace App.Reversi
 				{ StoneColor.Black, 0 },
 				{ StoneColor.White, 0 }
 			};
-			_ = Put(StoneColor.Black, StoneType.Normal, new Position(5, 5));
-			_ = Put(StoneColor.Black, StoneType.Normal, new Position(6, 6));
-			_ = Put(StoneColor.White, StoneType.Normal, new Position(6, 5));
-			_ = Put(StoneColor.White, StoneType.Normal, new Position(5, 6));
+			Put(StoneColor.Black, StoneType.Normal, new Position(5, 5)).Forget();
+			Put(StoneColor.Black, StoneType.Normal, new Position(6, 6)).Forget();
+			Put(StoneColor.White, StoneType.Normal, new Position(6, 5)).Forget();
+			Put(StoneColor.White, StoneType.Normal, new Position(5, 6)).Forget();
 
 			// 他変数の初期化
 			CurrentBoardSize = DEF_BOARD_SIZE;
@@ -110,6 +110,9 @@ namespace App.Reversi
 		/// <returns> 置けなかった場合nullを返す </returns>
 		public async UniTask PutProcess(StoneColor putPlayer, StoneType putType, Position clickPos)
 		{
+			var token = this.GetCancellationTokenOnDestroy();
+			token.ThrowIfCancellationRequested();
+
 			// はじめ逆の色で置くタイプの石を処理
 			StoneColor putColor = putPlayer;
 			if (putType.IsReverseType())
@@ -128,7 +131,9 @@ namespace App.Reversi
 			}
 
 			await Put(putColor, putType, clickPos);
+			if (token.IsCancellationRequested) return;
 			await Flip(reversePos);
+			if (token.IsCancellationRequested) return;
 
 			// 遅延反転の処理
 			for (int i = 0; i < DelayReverseStack.Count; i++)
@@ -142,7 +147,9 @@ namespace App.Reversi
 					_soundPublisher.Publish(new PlaySoundEffectMessage(SoundEffectType.Reverse));
 					_vfxPublisher.Publish(new PlayVFXMessage(VFXType.Reverse, BoardCells[pos.Row, pos.Col].transform.position));
 					await Flip(pos);
+					if (token.IsCancellationRequested) return;
 					await Flip(reversePos);
+					if (token.IsCancellationRequested) return;
 					DelayReverseStack.RemoveAt(i);
 				}
 			}
@@ -157,7 +164,7 @@ namespace App.Reversi
 					CurrentBoardSize = Math.Min(CurrentBoardSize + 2, MAX_BOARD_SIZE);
 					float size = (float)(CurrentBoardSize * 0.1 + 0.004);
 					await UniTask.WhenAll(
-						transform.DOScale(new Vector3(size, 1, size), 1).ToUniTask(),
+						transform.DOScale(new Vector3(size, 1, size), 1).ToUniTask(cancellationToken: token),
 						OnBoardSizeChanged.Invoke(CurrentBoardSize)
 					);
 					break;
@@ -169,7 +176,9 @@ namespace App.Reversi
 					StoneColor afterColor = BoardCells[clickPos.Row, clickPos.Col].Color.Opponent();
 					reversePos = FindReversePos(afterColor, clickPos);
 					await Flip(clickPos);
+					if (token.IsCancellationRequested) return;
 					await Flip(reversePos);
+					if (token.IsCancellationRequested) return;
 					break;
 
 				case StoneType.DelayReverse:
@@ -202,7 +211,9 @@ namespace App.Reversi
 
 		private async UniTask Flip(List<Position> posList)
 		{
-			await UniTask.WhenAll(posList.Select(pos => Flip(pos)));
+			var token = this.GetCancellationTokenOnDestroy();
+			await UniTask.WhenAll(posList.Select(pos => Flip(pos)))
+				.AttachExternalCancellation(token);
 		}
 
 		/// <summary>

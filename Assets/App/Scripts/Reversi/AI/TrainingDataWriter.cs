@@ -32,7 +32,6 @@ namespace App.Reversi.AI
 		{
 			try
 			{
-				// tempRootsÇÕ[NonSerialized]Ç»ÇÃÇ≈ÅAJSONÇ…ÇÕä‹Ç‹ÇÍÇ‹ÇπÇÒ
 				string json = JsonUtility.ToJson(record);
 				File.WriteAllText(filePath, json);
 			}
