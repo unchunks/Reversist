@@ -153,8 +153,6 @@ namespace App.Reversi
 
 		public void OnRestart()
 		{
-			DOTween.KillAll();
-
 			Scene activeScene = SceneManager.GetActiveScene();
 			SceneManager.LoadScene(activeScene.name);
 		}

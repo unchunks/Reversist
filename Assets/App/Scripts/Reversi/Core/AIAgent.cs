@@ -44,6 +44,11 @@ namespace App.Reversi.Core
 		/// </summary>
 		private void OnTurnChanged(TurnChangedMessage msg)
 		{
+			if (_aiColor == StoneColor.None)
+			{
+				Debug.LogWarning("AI‚ÌF‚ªİ’è‚³‚ê‚Ä‚¢‚Ü‚¹‚ñB");
+				return;
+			}
 			if (msg.CurrentPlayer == _aiColor)
 			{
 				_isAITurn = true;

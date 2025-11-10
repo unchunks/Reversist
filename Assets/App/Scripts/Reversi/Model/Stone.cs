@@ -2,7 +2,6 @@ using App.Reversi.Messaging;
 using Cysharp.Threading.Tasks;
 using DG.Tweening;
 using MessagePipe;
-using Unity.VisualScripting.Antlr3.Runtime;
 using UnityEngine;
 using VContainer;
 
@@ -24,8 +23,6 @@ namespace App.Reversi
 
 		public async UniTask Put(StoneColor color, StoneType type)
 		{
-			var token = this.GetCancellationTokenOnDestroy();
-
 			Color = color;
 			Type = type;
 
@@ -39,7 +36,7 @@ namespace App.Reversi
 
 			await transform.DOLocalMoveY(0, 0.3f)
 							.SetEase(Ease.OutQuart)
-							.ToUniTask(cancellationToken: token);
+							.ToUniTask();
 			transform.localPosition = new Vector3(0, 0, 0);
 
 			switch (type)
@@ -57,8 +54,6 @@ namespace App.Reversi
 
 		public async UniTask Flip()
 		{
-			var token = this.GetCancellationTokenOnDestroy();
-
 			if (Type == StoneType.Frozen)
 			{
 				await PlayFrozenAnim();
@@ -75,11 +70,11 @@ namespace App.Reversi
 				transform.DOLocalMoveY(0.5f, 0.2f)
 						.SetEase(Ease.InOutQuart)
 						.SetLoops(2, LoopType.Yoyo)
-						.ToUniTask(cancellationToken: token),
+						.ToUniTask(),
 
 				transform.DOLocalRotate(angle, 0.2f)
 						.SetEase(Ease.InOutQuart)
-						.ToUniTask(cancellationToken: token)
+						.ToUniTask()
 			);
 			transform.localPosition = new Vector3(0, 0, 0);
 			transform.localRotation = Quaternion.Euler(angle);
@@ -87,14 +82,12 @@ namespace App.Reversi
 
 		private async UniTask PlayFrozenAnim()
 		{
-			var token = this.GetCancellationTokenOnDestroy();
-
 			_soundPublisher.Publish(new PlaySoundEffectMessage(SoundEffectType.FrozenFlip));
 
 			await transform.DOLocalMoveX(0.05f, 0.05f)
 						.SetEase(Ease.InOutQuart)
 						.SetLoops(4, LoopType.Yoyo)
-						.ToUniTask(cancellationToken: token);
+						.ToUniTask();
 			transform.localPosition = new Vector3(0, 0, 0);
 		}
 

@@ -90,22 +90,22 @@ namespace App.Reversi.AI
 					nodesToEvaluate.Add(node);
 				}
 
-				using (var inputTensor = new Tensor(nodesToEvaluate.Count, 12, 12, 2)) // NHWC
+				using (var inputTensor = new Tensor(nodesToEvaluate.Count, 12, 12, 2))
 				{
+					int sampleSize = 12 * 12 * 2; // 288
+
 					for (int i = 0; i < nodesToEvaluate.Count; i++)
 					{
-						// NCHW (2, 12, 12) 形式のデータを取得
+						// NHWC (12, 12, 2) 形式のデータを取得
 						float[] stateData = ConvertStateToInputTensor(nodesToEvaluate[i].State);
 
-						// NHWC (12, 12, 2) 形式に並べ替え
-						for (int h = 0; h < 12; h++)
-							for (int w = 0; w < 12; w++)
-							{
-								// ch 0 (自石)
-								inputTensor[i, h, w, 0] = stateData[(h * 12) + w];
-								// ch 1 (相手石)
-								inputTensor[i, h, w, 1] = stateData[144 + (h * 12) + w];
-							}
+						// BarracudaのTensor (NHWC) に
+						// 1次元配列 (NHWC) からデータを直接コピー
+						// (i番目のバッチのj番目の要素としてフラットに書き込む)
+						for (int j = 0; j < sampleSize; j++)
+						{
+							inputTensor[i, j] = stateData[j];
+						}
 					}
 
 					_worker.Execute(inputTensor);
@@ -168,27 +168,36 @@ namespace App.Reversi.AI
 			_cts = null;
 		}
 
-		/// <pre>
-		/// NCHW (Channel first) 形式 (2, 12, 12) のテンソルを生成
-		/// [自, 自, ... (144個) ..., 敵, 敵, ... (144個)]
-		/// </pre>
+		/// <summary>
+		/// NHWC (Height, Width, Channel) 形式 (12, 12, 2) のテンソルを生成
+		/// [自, 敵, 自, 敵, ... (288個)]
+		/// </summary>
+		/// <param name="state"></param>
 		private float[] ConvertStateToInputTensor(GameState state)
 		{
-			int width = GameState.MAX_BOARD_SIZE;
-			int height = GameState.MAX_BOARD_SIZE;
-			int channels = 2;
-			float[] tensor = new float[width * height * channels];
+			int width = GameState.MAX_BOARD_SIZE;    // 12
+			int height = GameState.MAX_BOARD_SIZE;   // 12
+			int channels = 2; // (自石, 相手石)
+			float[] tensor = new float[width * height * channels]; // 288
 
 			StoneColor self = state.CurrentPlayer;
-			StoneColor opponent = state.CurrentPlayer.Opponent();
+			StoneColor opponent = state.CurrentPlayer.Opponent(); //
 
 			for (int r = 0; r < height; r++)
 			{
 				for (int c = 0; c < width; c++)
 				{
-					int idx = (r * width + c);
-					if (state.Board[r, c] == self) tensor[idx] = 1.0f; // Ch 0
-					if (state.Board[r, c] == opponent) tensor[idx + (width * height)] = 1.0f; // Ch 1
+					// NHWC: (Height, Width, Channel) の順でインデックスを計算
+					int base_idx = (r * width + c) * channels; // (r * 12 + c) * 2
+
+					if (state.Board[r, c] == self)
+					{
+						tensor[base_idx + 0] = 1.0f; // Channel 0 (自石)
+					}
+					if (state.Board[r, c] == opponent)
+					{
+						tensor[base_idx + 1] = 1.0f; // Channel 1 (相手石)
+					}
 				}
 			}
 			return tensor;

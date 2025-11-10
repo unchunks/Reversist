@@ -10,23 +10,17 @@ namespace App.Reversi.Core
 	/// </summary>
 	public class InputManager : MonoBehaviour
 	{
-		//[SerializeField] private Camera _mainCam;
+		[SerializeField] private Camera _mainCam;
 		[SerializeField] private LayerMask _hitLayer;
 
 		[Inject] private IPublisher<CellClickedMessage> _cellClickedPublisher;
 
-		private Camera _mainCam;
 		private bool _isInputActive = true;
 		public void SetInputActive(bool isActive) => _isInputActive = isActive;
 
-		private void Awake()
-		{
-			_mainCam = Camera.main;
-		}
-
 		private void Update()
 		{
-			if (_isInputActive && Input.GetMouseButtonDown(0) && _mainCam != null)
+			if (_isInputActive && Input.GetMouseButtonDown(0))
 			{
 				Ray ray = _mainCam.ScreenPointToRay(Input.mousePosition);
 

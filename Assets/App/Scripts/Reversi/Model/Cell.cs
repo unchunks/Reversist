@@ -43,17 +43,11 @@ namespace App.Reversi
 
 		public async UniTask Put(StoneColor color, StoneType type)
 		{
-			var token = this.GetCancellationTokenOnDestroy();
-			token.ThrowIfCancellationRequested();
-
 			isPlased = true;
 
 			_highlight.gameObject.SetActive(false);
 			_stone.gameObject.SetActive(true);
 			await _stone.Put(color, type);
-
-			if (token.IsCancellationRequested) return;
-
 			switch (type)
 			{
 				case StoneType.Frozen:

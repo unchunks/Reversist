@@ -54,6 +54,8 @@ namespace App.Reversi.AI
 				_validActions = new List<GameAction>();
 				_isEvaluated = true; // 終了ノードは評価済みとする
 				_value = ReversiSimulator.GetResult(state); // 最終結果をValueとする
+
+				Backpropagate(_value);
 			}
 		}
 
@@ -161,7 +163,7 @@ namespace App.Reversi.AI
 				lock (node._lock)
 				{
 					node.VisitCount++;
-					// 常に「相手」の視点のValueを加算する（= 自分のValueのマイナス値）
+					// 常に「自分」の視点のValueを加算する
 					node._winScore += value;
 				}
 				value = -value; // 伝播するValueを（親ノードから見て）反転させる
