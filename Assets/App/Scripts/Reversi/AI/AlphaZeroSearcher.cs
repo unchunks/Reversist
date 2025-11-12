@@ -1,13 +1,12 @@
 using Cysharp.Threading.Tasks;
+using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
+using UnityEngine;
 
 namespace App.Reversi.AI
 {
-	/// <summary>
-	/// AlphaZero MCTSの検索（思考）ルーチンを独立させたクラス
-	/// AIAgent から呼び出される
-	/// </summary>
 	public static class AlphaZeroSearcher
 	{
 		public static async UniTask<GameAction> FindBestMove(
@@ -15,48 +14,64 @@ namespace App.Reversi.AI
 			int iterations,
 			CancellationToken token)
 		{
-			MCTSNode_AlphaZero rootNode = new MCTSNode_AlphaZero(initialState);
+			var rootNode = new MCTSNode(initialState);
 
 			if (NNEvaluatorService.Instance == null)
 			{
-				UnityEngine.Debug.LogError("NNEvaluatorServiceが利用できません。");
+				Debug.LogError("NNEvaluatorService縺瑚ｦ九▽縺九ｊ縺ｾ縺帙ｓ");
 				return null;
 			}
 
 			NNEvaluatorService.Instance.EnqueueNode(rootNode);
 			await UniTask.WaitUntil(() => rootNode.IsEvaluated(), cancellationToken: token);
 
+			// 荳ｦ蛻玲爾邏｢
+			int threadsCount = Math.Min(4, Environment.ProcessorCount);
+			var tasks = new List<UniTask>();
+
+			for (int t = 0; t < threadsCount; t++)
+			{
+				tasks.Add(SearchWorker(rootNode, iterations / threadsCount, token));
+			}
+			Debug.Log($"AlphaZeroSearcher: Starting {threadsCount} search workers for {iterations} iterations.");
+			await UniTask.WhenAll(tasks);
+			Debug.Log("AlphaZeroSearcher: Search workers completed.");
+
+			if (token.IsCancellationRequested) return null;
+
+			if (rootNode.Children.Count == 0) return null;
+
+			return rootNode.Children
+				.OrderByDescending(kvp => kvp.Value.GetVisitCount())
+				.First().Key;
+		}
+
+		private static async UniTask SearchWorker(
+			MCTSNode rootNode,
+			int iterations,
+			CancellationToken token)
+		{
 			for (int i = 0; i < iterations; i++)
 			{
 				if (token.IsCancellationRequested) break;
-				MCTSNode_AlphaZero node = rootNode;
 
+				var node = rootNode;
+
+				// Selection
 				while (!node.IsLeafAndNotEvaluated() && !node.IsGameOver())
 				{
-					GameAction action = node.SelectActionByPUCT();
+					var action = node.SelectActionByPUCT();
 					if (action == null) break;
 					node = node.Expand(action);
 				}
 
+				// Evaluation
 				if (node.IsLeafAndNotEvaluated())
 				{
 					NNEvaluatorService.Instance.EnqueueNode(node);
+					await UniTask.WaitUntil(() => node.IsEvaluated(), cancellationToken: token);
 				}
 			}
-
-			if (token.IsCancellationRequested) return null;
-
-			if (rootNode.Children.Count == 0)
-			{
-				UnityEngine.Debug.LogWarning("AIの思考結果、有効な手がありませんでした（パス）。");
-				return null;
-			}
-
-			GameAction bestAction = rootNode.Children
-				.OrderByDescending(kvp => kvp.Value.GetVisitCount())
-				.First().Key;
-
-			return bestAction;
 		}
 	}
 }

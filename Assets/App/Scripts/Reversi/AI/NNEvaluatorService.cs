@@ -8,21 +8,17 @@ using Unity.Barracuda;
 
 namespace App.Reversi.AI
 {
-	/// <summary>
-	/// Barracuda(ONNX)‚Ì„˜_‚ğƒoƒbƒ`ˆ—‚ÅÀs‚·‚éí’“ƒT[ƒrƒX
-	/// (ƒVƒ“ƒOƒ‹ƒgƒ“‚Æ‚µ‚ÄƒV[ƒ“‚É1‚Â‚¾‚¯”z’u‚·‚é)
-	/// </summary>
 	public class NNEvaluatorService : MonoBehaviour
 	{
 		public static NNEvaluatorService Instance { get; private set; }
 
-		[Header("NNƒ‚ƒfƒ‹")]
+		[Header("NNãƒ¢ãƒ‡ãƒ«")]
 		[SerializeField] private NNModel _nnModelAsset;
 		[SerializeField] private int _maxBatchSize = 64;
 
 		private Model _runtimeModel;
 		private IWorker _worker;
-		private ConcurrentQueue<MCTSNode_AlphaZero> _evaluationQueue;
+		private ConcurrentQueue<MCTSNode> _evaluationQueue;
 		private CancellationTokenSource _cts;
 
 		private void Awake()
@@ -39,11 +35,11 @@ namespace App.Reversi.AI
 		private async void Start()
 		{
 			_cts = new CancellationTokenSource();
-			_evaluationQueue = new ConcurrentQueue<MCTSNode_AlphaZero>();
+			_evaluationQueue = new ConcurrentQueue<MCTSNode>();
 
 			if (!await SetupBarracudaWorkerAsync(_cts.Token))
 			{
-				Debug.LogError("NNEvaluatorService‚Ì‰Šú‰»‚É¸”s‚µ‚Ü‚µ‚½B");
+				Debug.LogError("NNEvaluatorServiceã®åˆæœŸåŒ–ã«å¤±æ•—ã—ã¾ã—ãŸã€‚");
 				enabled = false;
 				return;
 			}
@@ -61,7 +57,7 @@ namespace App.Reversi.AI
 			}
 		}
 
-		public void EnqueueNode(MCTSNode_AlphaZero node)
+		public void EnqueueNode(MCTSNode node)
 		{
 			if (_evaluationQueue == null || _cts.IsCancellationRequested) return;
 			_evaluationQueue.Enqueue(node);
@@ -71,13 +67,13 @@ namespace App.Reversi.AI
 
 		private async UniTask RunEvaluationBatchLoopAsync(CancellationToken token)
 		{
-			var nodesToEvaluate = new List<MCTSNode_AlphaZero>(_maxBatchSize);
+			var nodesToEvaluate = new List<MCTSNode>(_maxBatchSize);
 
 			while (!token.IsCancellationRequested)
 			{
 				nodesToEvaluate.Clear();
 
-				MCTSNode_AlphaZero firstNode;
+				MCTSNode firstNode;
 				while (!_evaluationQueue.TryDequeue(out firstNode))
 				{
 					if (token.IsCancellationRequested) return;
@@ -85,24 +81,17 @@ namespace App.Reversi.AI
 				}
 				nodesToEvaluate.Add(firstNode);
 
-				while (nodesToEvaluate.Count < _maxBatchSize && _evaluationQueue.TryDequeue(out MCTSNode_AlphaZero node))
+				while (nodesToEvaluate.Count < _maxBatchSize && _evaluationQueue.TryDequeue(out MCTSNode node))
 				{
 					nodesToEvaluate.Add(node);
 				}
 
 				using (var inputTensor = new Tensor(nodesToEvaluate.Count, 12, 12, 2))
 				{
-					int sampleSize = 12 * 12 * 2; // 288
-
 					for (int i = 0; i < nodesToEvaluate.Count; i++)
 					{
-						// NHWC (12, 12, 2) Œ`®‚Ìƒf[ƒ^‚ğæ“¾
 						float[] stateData = ConvertStateToInputTensor(nodesToEvaluate[i].State);
-
-						// Barracuda‚ÌTensor (NHWC) ‚É
-						// 1ŸŒ³”z—ñ (NHWC) ‚©‚çƒf[ƒ^‚ğ’¼ÚƒRƒs[
-						// (i”Ô–Ú‚Ìƒoƒbƒ`‚Ìj”Ô–Ú‚Ì—v‘f‚Æ‚µ‚Äƒtƒ‰ƒbƒg‚É‘‚«‚Ş)
-						for (int j = 0; j < sampleSize; j++)
+						for (int j = 0; j < stateData.Length; j++)
 						{
 							inputTensor[i, j] = stateData[j];
 						}
@@ -110,11 +99,10 @@ namespace App.Reversi.AI
 
 					_worker.Execute(inputTensor);
 
-					// Python‚Å "policy", "value" ‚Æ–¼•t‚¯‚½o—Í‚ğæ“¾
 					Tensor policyTensor = _worker.PeekOutput("policy");
 					Tensor valueTensor = _worker.PeekOutput("value");
 
-					int policySize = 12 * 12 * 5; // 720
+					int policySize = 12 * 12 * 5;
 					float[] allPolicyData = policyTensor.AsFloats();
 					float[] allValueData = valueTensor.AsFloats();
 
@@ -137,24 +125,17 @@ namespace App.Reversi.AI
 		{
 			try
 			{
-				Debug.Log("Barracudaƒ[ƒJ[‚Ìì¬‚ğŠJn‚µ‚Ü‚· (ƒƒCƒ“ƒXƒŒƒbƒh)...");
-
 				var type = WorkerFactory.Type.Auto;
 				var model = ModelLoader.Load(_nnModelAsset);
 				var wrkr = WorkerFactory.CreateWorker(type, model);
-
-				// ”O‚Ì‚½‚ßA‰Šú‰»‚ªŠ®—¹‚·‚é‚Ü‚Å1ƒtƒŒ[ƒ€‘Ò‹@‚µ‚Ü‚·
 				await UniTask.Yield(PlayerLoopTiming.Update, token);
-
 				_runtimeModel = model;
 				_worker = wrkr;
-
-				Debug.Log($"Barracudaƒ[ƒJ[‚ğ {WorkerFactory.Type.Auto} ‚Åì¬‚µ‚Ü‚µ‚½B");
 				return true;
 			}
 			catch (Exception e)
 			{
-				Debug.LogError($"NNƒ‚ƒfƒ‹‚Ìƒ[ƒh‚Ü‚½‚Íƒ[ƒJ[‚Ìì¬‚É¸”s: {e.Message}");
+				Debug.LogError($"NNãƒ¢ãƒ‡ãƒ«ã®ãƒ­ãƒ¼ãƒ‰ã¾ãŸã¯ãƒ¯ãƒ¼ã‚«ãƒ¼ã®ä½œæˆã«å¤±æ•—: {e.Message}");
 				return false;
 			}
 		}
@@ -168,36 +149,29 @@ namespace App.Reversi.AI
 			_cts = null;
 		}
 
-		/// <summary>
-		/// NHWC (Height, Width, Channel) Œ`® (12, 12, 2) ‚Ìƒeƒ“ƒ\ƒ‹‚ğ¶¬
-		/// [©, “G, ©, “G, ... (288ŒÂ)]
-		/// </summary>
-		/// <param name="state"></param>
 		private float[] ConvertStateToInputTensor(GameState state)
 		{
-			int width = GameState.MAX_BOARD_SIZE;    // 12
-			int height = GameState.MAX_BOARD_SIZE;   // 12
-			int channels = 2; // (©Î, ‘ŠèÎ)
-			float[] tensor = new float[width * height * channels]; // 288
+			const int width = GameState.MAX_BOARD_SIZE;
+			const int height = GameState.MAX_BOARD_SIZE;
+			const int channels = 2;
+			float[] tensor = new float[width * height * channels];
 
-			StoneColor self = state.CurrentPlayer;
-			StoneColor opponent = state.CurrentPlayer.Opponent(); //
+			ulong[] selfStones = (state.CurrentPlayer == StoneColor.Black) ? state.BlackStones : state.WhiteStones;
+			ulong[] opponentStones = (state.CurrentPlayer == StoneColor.Black) ? state.WhiteStones : state.BlackStones;
 
-			for (int r = 0; r < height; r++)
+			for (int i = 0; i < width * height; i++)
 			{
-				for (int c = 0; c < width; c++)
-				{
-					// NHWC: (Height, Width, Channel) ‚Ì‡‚ÅƒCƒ“ƒfƒbƒNƒX‚ğŒvZ
-					int base_idx = (r * width + c) * channels; // (r * 12 + c) * 2
+				int arrayIndex = i / 64;
+				int bitIndex = i % 64;
+				int baseIdx = i * channels;
 
-					if (state.Board[r, c] == self)
-					{
-						tensor[base_idx + 0] = 1.0f; // Channel 0 (©Î)
-					}
-					if (state.Board[r, c] == opponent)
-					{
-						tensor[base_idx + 1] = 1.0f; // Channel 1 (‘ŠèÎ)
-					}
+				if (((selfStones[arrayIndex] >> bitIndex) & 1) == 1)
+				{
+					tensor[baseIdx + 0] = 1.0f;
+				}
+				if (((opponentStones[arrayIndex] >> bitIndex) & 1) == 1)
+				{
+					tensor[baseIdx + 1] = 1.0f;
 				}
 			}
 			return tensor;

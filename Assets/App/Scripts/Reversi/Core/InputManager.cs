@@ -6,7 +6,7 @@ using VContainer;
 namespace App.Reversi.Core
 {
 	/// <summary>
-	/// UIˆÈŠO‚Ö‚Ìƒ†[ƒU[‚Ì“ü—Íi”Õ–ÊƒNƒŠƒbƒN‚È‚Çj‚ğŠÇ—‚·‚é
+	/// UIä»¥å¤–ã®ãƒ¦ãƒ¼ã‚¶ãƒ¼ã‹ã‚‰ã®å…¥åŠ›ï¼ˆç›¤é¢ã‚¯ãƒªãƒƒã‚¯ãªã©ï¼‰ã‚’ç®¡ç†ã™ã‚‹
 	/// </summary>
 	public class InputManager : MonoBehaviour
 	{
@@ -14,6 +14,7 @@ namespace App.Reversi.Core
 		[SerializeField] private LayerMask _hitLayer;
 
 		[Inject] private IPublisher<CellClickedMessage> _cellClickedPublisher;
+		[Inject] private Board _board;
 
 		private bool _isInputActive = true;
 		public void SetInputActive(bool isActive) => _isInputActive = isActive;
@@ -24,21 +25,14 @@ namespace App.Reversi.Core
 			{
 				Ray ray = _mainCam.ScreenPointToRay(Input.mousePosition);
 
-				// ’u‚¯‚éêŠ‚É“ü—Í‚ª‚ ‚Á‚½‚ç
 				if (Physics.Raycast(ray, out RaycastHit hitInfo, 20f, _hitLayer))
 				{
-					Vector3 impact = new Vector3(hitInfo.point.z, hitInfo.point.y, hitInfo.point.x);
-					Position boardPos = SceneToBoardPos(impact);
-					_cellClickedPublisher.Publish(new CellClickedMessage(boardPos));
+					if (_board.TryGetBoardPosition(hitInfo.point, out Position boardPos))
+					{
+						_cellClickedPublisher.Publish(new CellClickedMessage(boardPos));
+					}
 				}
 			}
-		}
-
-		private Position SceneToBoardPos(Vector3 scenePos)
-		{
-			int col = (int)(scenePos.x + 0.5f);
-			int row = (int)(scenePos.z + 0.5f);
-			return new Position(col, row);
 		}
 	}
 }

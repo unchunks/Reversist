@@ -15,7 +15,7 @@ namespace App.Reversi.Core
 	}
 
 	/// <summary>
-	/// ƒQ[ƒ€‚ÌisAƒ^[ƒ“ŠÇ—AŸ”s”»’è‚ğs‚¤
+	/// ï¿½Qï¿½[ï¿½ï¿½ï¿½Ìiï¿½sï¿½Aï¿½^ï¿½[ï¿½ï¿½ï¿½Ç—ï¿½ï¿½Aï¿½ï¿½ï¿½sï¿½ï¿½ï¿½ï¿½ï¿½ï¿½sï¿½ï¿½
 	/// </summary>
 	public class GameController : MonoBehaviour
 	{
@@ -42,8 +42,10 @@ namespace App.Reversi.Core
 		private StoneColor _currentPlayer;
 		private Dictionary<StoneColor, StoneType> _currentSelectedType;
 
-		private void Start()
+		private async UniTask Start()
 		{
+			await _board.InitializeAsync();
+
 			_isGameOver = false;
 			_currentPlayer = StoneColor.Black;
 
@@ -53,30 +55,30 @@ namespace App.Reversi.Core
 				{ StoneColor.White, StoneType.Normal }
 			};
 
-			// ƒƒbƒZ[ƒW‚Ö‚Ì“o˜^
+			// ï¿½ï¿½ï¿½bï¿½Zï¿½[ï¿½Wï¿½Ö‚Ì“oï¿½^
 			_cellClickedSubscriber.Subscribe(OnCellClicked);
-			_boardInfoSubscriber.Subscribe(OnBoardUpdated);
+			_boardInfoSubscriber.Subscribe(info => OnBoardUpdated(info).Forget());
 			_selectedStoneTypeSubscriber.Subscribe(OnSelectedStoneTypeChanged);
 
-			// ƒJƒƒ‰˜A“®‚Ì“o˜^
+			// ï¿½Jï¿½ï¿½ï¿½ï¿½ï¿½Aï¿½ï¿½ï¿½Ì“oï¿½^
 			_board.OnBoardSizeChanged = async (size) =>
 			{
 				await _mainCam.transform.DOMoveY(size, 1).SetEase(Ease.OutBounce).ToUniTask();
 			};
 
-			// AI‚ÌF‚ğ‰Šú‰»
+			// AIï¿½ÌFï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 			if (_gameMode == GameMode.PVE)
 			{
 				_aiAgent.Initialize(_aiColor);
 			}
 
-			// UI‚ÆƒnƒCƒ‰ƒCƒg‚Ì‰Šú‰»
+			// UIï¿½Æƒnï¿½Cï¿½ï¿½ï¿½Cï¿½gï¿½Ìï¿½ï¿½ï¿½ï¿½ï¿½
 			_board.UpdateHighlight(_currentPlayer, _currentSelectedType[_currentPlayer]);
 			_turnChangedPublisher.Publish(new TurnChangedMessage(_currentPlayer));
 		}
 
 		/// <summary>
-		/// ƒvƒŒƒCƒ„[‚ªg—p‚·‚éÎ‚Ìí—Ş‚ğ•ÏX‚µ‚½
+		/// ï¿½vï¿½ï¿½ï¿½Cï¿½ï¿½ï¿½[ï¿½ï¿½ï¿½gï¿½pï¿½ï¿½ï¿½ï¿½Î‚Ìï¿½Ş‚ï¿½ÏXï¿½ï¿½ï¿½ï¿½
 		/// </summary>
 		private void OnSelectedStoneTypeChanged(SelectedStoneTypeInfo info)
 		{
@@ -88,7 +90,7 @@ namespace App.Reversi.Core
 		}
 
 		/// <summary>
-		/// ƒ†[ƒU[‚ª”Õ–Ê‚ğƒNƒŠƒbƒN‚µ‚½
+		/// ï¿½ï¿½ï¿½[ï¿½Uï¿½[ï¿½ï¿½ï¿½Õ–Ê‚ï¿½ï¿½Nï¿½ï¿½ï¿½bï¿½Nï¿½ï¿½ï¿½ï¿½
 		/// </summary>
 		private void OnCellClicked(CellClickedMessage msg)
 		{
@@ -96,41 +98,41 @@ namespace App.Reversi.Core
 
 			StoneType selectedType = _currentSelectedType[_currentPlayer];
 
-			// Î‚ÌİŒÉ‚ğƒ`ƒFƒbƒN
+			// ï¿½Î‚ÌİŒÉ‚ï¿½ï¿½`ï¿½Fï¿½bï¿½N
 			if (!_playerInventory.HasStock(_currentPlayer, selectedType))
 			{
-				Debug.Log($"Î‚Ì”‚ª‘«‚è‚Ü‚¹‚ñ: {_currentPlayer}, {selectedType}");
+				Debug.Log($"ï¿½Î‚Ìï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ü‚ï¿½ï¿½ï¿½: {_currentPlayer}, {selectedType}");
 				return;
 			}
 
-			// ”Õ–Ê‚É’u‚¯‚é‚©ƒ`ƒFƒbƒN
+			// ï¿½Õ–Ê‚É’uï¿½ï¿½ï¿½é‚©ï¿½`ï¿½Fï¿½bï¿½N
 			if (!_board.CanPut(msg.Position))
 			{
-				Debug.Log($"‚»‚ÌêŠ‚É‚Í’u‚¯‚Ü‚¹‚ñ: {msg.Position}");
+				Debug.Log($"ï¿½ï¿½ï¿½ÌêŠï¿½É‚Í’uï¿½ï¿½ï¿½Ü‚ï¿½ï¿½ï¿½: {msg.Position}");
 				return;
 			}
 
-			// ”z’uƒŠƒNƒGƒXƒg‚ğ”­s
+			// ï¿½zï¿½uï¿½ï¿½ï¿½Nï¿½Gï¿½Xï¿½gï¿½ğ”­s
 			_board.HideHighlight();
 			_requestPutStonePublisher.Publish(new RequestPutStoneMessage(_currentPlayer, selectedType, msg.Position));
 		}
 
 		/// <summary>
-		/// ”Õ–Ê‚ÌXV‚ªŠ®—¹‚µ‚½iBoard‚ªÎ‚ğ’u‚¢‚½j
+		/// ï¿½Õ–Ê‚ÌXï¿½Vï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½iBoardï¿½ï¿½ï¿½Î‚ï¿½uï¿½ï¿½ï¿½ï¿½ï¿½j
 		/// </summary>
-		private async void OnBoardUpdated(BoardInfo info)
+		private async UniTask OnBoardUpdated(BoardInfo info)
 		{
 			if (_isGameOver) return;
 
-			// Î‚ÌƒAƒjƒ[ƒVƒ‡ƒ“i“Á‚ÉExtendj‚ÆƒJƒƒ‰ƒ[ƒN‚ª‹£‡‚µ‚È‚¢‚æ‚¤A
-			// ­‚µ‘Ò‹@‚µ‚Ä‚©‚çƒ^[ƒ“ƒ`ƒFƒbƒN‚ğs‚¤
+			// ï¿½Î‚ÌƒAï¿½jï¿½ï¿½ï¿½[ï¿½Vï¿½ï¿½ï¿½ï¿½ï¿½iï¿½ï¿½ï¿½ï¿½Extendï¿½jï¿½ÆƒJï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½[ï¿½Nï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½È‚ï¿½ï¿½æ‚¤ï¿½A
+			// ï¿½ï¿½ï¿½ï¿½ï¿½Ò‹@ï¿½ï¿½ï¿½Ä‚ï¿½ï¿½ï¿½^ï¿½[ï¿½ï¿½ï¿½`ï¿½Fï¿½bï¿½Nï¿½ï¿½ï¿½sï¿½ï¿½
 			await UniTask.DelayFrame(1);
 
 			CheckNextTurn();
 		}
 
 		/// <summary>
-		/// Ÿ‚Ìƒ^[ƒ“‚Éi‚İAƒpƒX‚âƒQ[ƒ€ƒI[ƒo[‚ğ”»’è‚·‚é
+		/// ï¿½ï¿½ï¿½Ìƒ^ï¿½[ï¿½ï¿½ï¿½Éiï¿½İAï¿½pï¿½Xï¿½ï¿½Qï¿½[ï¿½ï¿½ï¿½Iï¿½[ï¿½oï¿½[ï¿½ğ”»’è‚·ï¿½ï¿½
 		/// </summary>
 		private void CheckNextTurn()
 		{
@@ -139,14 +141,14 @@ namespace App.Reversi.Core
 
 			if (_board.UpdateHighlight(_currentPlayer, nextType) == 0)
 			{
-				// ƒpƒX
+				// ï¿½pï¿½X
 				_currentPlayer = _currentPlayer.Opponent();
 				nextType = _currentSelectedType[_currentPlayer];
-				Debug.Log(_currentPlayer.Opponent() + " ‚ªƒpƒX‚µ‚Ü‚µ‚½");
+				Debug.Log(_currentPlayer.Opponent() + " ï¿½ï¿½ï¿½pï¿½Xï¿½ï¿½ï¿½Ü‚ï¿½ï¿½ï¿½");
 
 				if (_board.UpdateHighlight(_currentPlayer, nextType) == 0)
 				{
-					// —¼Ò’u‚¯‚È‚¢ = ƒQ[ƒ€ƒI[ƒo[
+					// ï¿½ï¿½ï¿½Ò’uï¿½ï¿½ï¿½È‚ï¿½ = ï¿½Qï¿½[ï¿½ï¿½ï¿½Iï¿½[ï¿½oï¿½[
 					_isGameOver = true;
 					_board.HideHighlight();
 					_inputManager.SetInputActive(false);
@@ -159,18 +161,18 @@ namespace App.Reversi.Core
 				}
 			}
 
-			// ƒ^[ƒ“‚ÌŒğ‘ã‚ğ’Ê’m
-			Debug.Log("Ÿ‚Ìƒ^[ƒ“: " + _currentPlayer);
+			// ï¿½^ï¿½[ï¿½ï¿½ï¿½ÌŒï¿½ï¿½ï¿½Ê’m
+			Debug.Log("ï¿½ï¿½ï¿½Ìƒ^ï¿½[ï¿½ï¿½: " + _currentPlayer);
 			_turnChangedPublisher.Publish(new TurnChangedMessage(_currentPlayer));
 
 			if (_gameMode == GameMode.PVE && _currentPlayer == _aiColor)
 			{
-				// AI‚Ìƒ^[ƒ“FƒvƒŒƒCƒ„[‚Ì“ü—Í‚ğ–³Œø‰»
+				// AIï¿½Ìƒ^ï¿½[ï¿½ï¿½ï¿½Fï¿½vï¿½ï¿½ï¿½Cï¿½ï¿½ï¿½[ï¿½Ì“ï¿½ï¿½Í‚ğ–³Œï¿½ï¿½ï¿½
 				_inputManager.SetInputActive(false);
 			}
 			else
 			{
-				// lŠÔ‚Ìƒ^[ƒ“FƒvƒŒƒCƒ„[‚Ì“ü—Í‚ğ—LŒø‰»
+				// ï¿½lï¿½Ô‚Ìƒ^ï¿½[ï¿½ï¿½ï¿½Fï¿½vï¿½ï¿½ï¿½Cï¿½ï¿½ï¿½[ï¿½Ì“ï¿½ï¿½Í‚ï¿½Lï¿½ï¿½ï¿½ï¿½
 				_inputManager.SetInputActive(true);
 			}
 		}

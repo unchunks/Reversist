@@ -2,7 +2,6 @@ using App.Reversi.AI;
 using App.Reversi.Messaging;
 using Cysharp.Threading.Tasks;
 using MessagePipe;
-using System.Collections.Generic;
 using UnityEngine;
 using VContainer;
 
@@ -10,8 +9,8 @@ namespace App.Reversi.Core
 {
 	public class AIAgent : MonoBehaviour
 	{
-		[Header("AIİ’è")]
-		[Tooltip("AI‚ª1è‚É‚©‚¯‚éMCTS‚Ì”½•œ‰ñ”")]
+		[Header("AIè¨­å®š")]
+		[Tooltip("AIãŒ1æ‰‹ã«è¡Œã†MCTSã®åå¾©å›æ•°")]
 		[SerializeField] private int _mctsIterationsPerMove = 2000;
 
 		[Inject] private Board _board;
@@ -31,22 +30,16 @@ namespace App.Reversi.Core
 			_turnChangedSubscriber.Subscribe(OnTurnChanged);
 		}
 
-		/// <summary>
-		/// GameController‚©‚çAI‚ÌF‚ğİ’è‚·‚é
-		/// </summary>
 		public void Initialize(StoneColor aiColor)
 		{
 			_aiColor = aiColor;
 		}
 
-		/// <summary>
-		/// ƒ^[ƒ“•ÏX‚Ì’Ê’m‚ğó‚¯æ‚é
-		/// </summary>
 		private void OnTurnChanged(TurnChangedMessage msg)
 		{
 			if (_aiColor == StoneColor.None)
 			{
-				Debug.LogWarning("AI‚ÌF‚ªİ’è‚³‚ê‚Ä‚¢‚Ü‚¹‚ñB");
+				Debug.LogWarning("AIã®è‰²ãŒè¨­å®šã•ã‚Œã¦ã„ã¾ã›ã‚“ã€‚");
 				return;
 			}
 			if (msg.CurrentPlayer == _aiColor)
@@ -60,84 +53,35 @@ namespace App.Reversi.Core
 			}
 		}
 
-		/// <summary>
-		/// AI‚Ìvl‚Æs“®Às
-		/// </summary>
 		private async UniTask RequestAIMove()
 		{
-			// UI‚Éuvl’†v‚ğ’Ê’m
-			Debug.Log("AIvlŠJn");
 			_aiThinkingPublisher.Publish(new AIThinkingMessage(_aiColor, true));
 
-			// Œ»İ‚ÌUnity‚Ì”Õ–Ê‚©‚çAAIƒVƒ~ƒ…ƒŒ[ƒ^[—p‚ÌGameState‚ğ\’z
 			GameState currentState = BuildCurrentGameState();
 
-			// MCTSÀsiƒƒCƒ“ƒXƒŒƒbƒh‚ğƒuƒƒbƒN‚µ‚È‚¢‚æ‚¤A•ÊƒXƒŒƒbƒh‚ÅÀsj
 			GameAction bestAction = await AlphaZeroSearcher.FindBestMove(
 				currentState,
 				_mctsIterationsPerMove,
 				this.GetCancellationTokenOnDestroy()
 			);
+			Debug.Log($"AI({_aiColor})ã®é¸æŠ: Position={bestAction?.Position}, Type={bestAction?.Type}");
 
-			// vl‚ªI‚í‚Á‚½‚±‚Æ‚ğ’Ê’m
-			Debug.Log("AIvlI—¹");
+			currentState.ReturnToPool(); // ãƒ—ãƒ¼ãƒ«ã«è¿”ã™
+
 			_aiThinkingPublisher.Publish(new AIThinkingMessage(_aiColor, false));
 
-			if (!_isAITurn) return; // vl’†‚ÉƒQ[ƒ€‚ªI‚í‚Á‚½‚È‚Ç
+			if (!_isAITurn) return;
 			if (bestAction != null)
 			{
-				// Î‚ğ’u‚­ƒŠƒNƒGƒXƒg‚ğ”­s
 				_board.HideHighlight();
 				_requestPutStonePublisher.Publish(new RequestPutStoneMessage(bestAction.Player, bestAction.Type, bestAction.Position));
 			}
-			// (bestAction == null ‚Ìê‡‚ÍƒpƒXBGameController‚ªŸ‚Ìƒ^[ƒ“‚ÅŒŸ’m‚·‚é)
 		}
 
-		/// <summary>
-		/// Œ»İ‚ÌUnity‚Ì”Õ–Ê(Board, PlayerInventory)‚©‚ç
-		/// AIƒVƒ~ƒ…ƒŒ[ƒ^[—p‚ÌGameStateƒIƒuƒWƒFƒNƒg‚ğ\’z‚·‚é
-		/// </summary>
 		private GameState BuildCurrentGameState()
 		{
-			var inventoriesCopy = new Dictionary<StoneColor, AvailableStoneCount>();
-			foreach (var inv in _playerInventory.Inventories)
-			{
-				inventoriesCopy.Add(inv.Key, new AvailableStoneCount(inv.Value));
-			}
-
-			var state = new GameState
-			{
-				CurrentPlayer = _aiColor,
-				CurrentBoardSize = _board.CurrentBoardSize,
-				Inventories = inventoriesCopy,
-				DelayReverseStack = new List<ReverseCountDown>(_board.DelayReverseStack),
-				IsGameOver = false,
-				StoneCount = new Dictionary<StoneColor, int>() {
-					{ StoneColor.Black, 0 }, { StoneColor.White, 0 }
-				}
-			};
-
-			// ”Õ–ÊiCell[,]j‚ğƒfƒB[ƒvƒRƒs[
-			for (int r = 0; r < GameState.MAX_BOARD_SIZE; r++)
-			{
-				for (int c = 0; c < GameState.MAX_BOARD_SIZE; c++)
-				{
-					Cell cell = _board.BoardCells[r, c];
-					if (cell != null && cell.isPlased)
-					{
-						state.Board[r, c] = cell.Color;
-
-						state.StoneTypes[r, c] = cell.Type;
-
-						state.StoneCount[cell.Color]++;
-					}
-				}
-			}
-
-			// AIƒVƒ~ƒ…ƒŒ[ƒ^‚ªg—p‚·‚éu—LŒø‚Èè‚ÌƒLƒƒƒbƒVƒ…v‚ğƒNƒŠƒA
-			state.ValidActionsCache = null;
-
-			return state;
+			// BoardStateConverterã®æ‹¡å¼µãƒ¡ã‚½ãƒƒãƒ‰ã‚’ä½¿ã„ã€Unityã®Boardã‹ã‚‰æœ€é©åŒ–ã•ã‚ŒãŸGameStateã‚’ç”Ÿæˆ
+			return BoardStateConverter.GetCurrentGameState(_board, _aiColor, _playerInventory.Inventories);
 		}
 	}
 }

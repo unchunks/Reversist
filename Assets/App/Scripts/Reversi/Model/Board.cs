@@ -1,4 +1,5 @@
 using App.Reversi.AI;
+using App.Reversi.Core;
 using App.Reversi.Messaging;
 using Cysharp.Threading.Tasks;
 using DG.Tweening;
@@ -6,6 +7,8 @@ using MessagePipe;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.CompilerServices;
+using System.Threading.Tasks;
 using Unity.VisualScripting;
 using UnityEngine;
 using VContainer;
@@ -72,24 +75,29 @@ namespace App.Reversi
 			{
 				for (int col = 0; col < MAX_BOARD_SIZE; col++)
 				{
-					BoardCells[row, col] = _resolver.Instantiate(_cellPrefab, new Vector3(col, 0, row), Quaternion.identity);
+					BoardCells[row, col] = _resolver.Instantiate(_cellPrefab, new Vector3(col, 0, row), Quaternion.identity, transform);
 				}
 			}
 
-			// 初期配置
+			// 石数と遅延反転スタックの初期化
 			StoneCount = new Dictionary<StoneColor, int>
 			{
 				{ StoneColor.Black, 0 },
 				{ StoneColor.White, 0 }
 			};
-			_ = Put(StoneColor.Black, StoneType.Normal, new Position(5, 5));
-			_ = Put(StoneColor.Black, StoneType.Normal, new Position(6, 6));
-			_ = Put(StoneColor.White, StoneType.Normal, new Position(6, 5));
-			_ = Put(StoneColor.White, StoneType.Normal, new Position(5, 6));
-
-			// 他変数の初期化
-			CurrentBoardSize = DEF_BOARD_SIZE;
 			DelayReverseStack = new List<ReverseCountDown>();
+			CurrentBoardSize = DEF_BOARD_SIZE;
+		}
+
+		public async UniTask InitializeAsync()
+		{
+			// 初期配置
+			await UniTask.WhenAll(
+				Put(StoneColor.Black, StoneType.Normal, new Position(5, 5)),
+				Put(StoneColor.Black, StoneType.Normal, new Position(6, 6)),
+				Put(StoneColor.White, StoneType.Normal, new Position(6, 5)),
+				Put(StoneColor.White, StoneType.Normal, new Position(5, 6))
+			);
 		}
 
 		/// <summary>
@@ -347,6 +355,21 @@ namespace App.Reversi
 			int center = MAX_BOARD_SIZE / 2;
 			int halfSize = CurrentBoardSize / 2;
 			return row >= center - halfSize && row < center + halfSize && col >= center - halfSize && col < center + halfSize;
+		}
+
+		/// <summary>
+		/// ワールド座標から盤上のマス座標を取得する
+		/// </summary>
+		/// <param name="worldPos">Raycastの衝突点などのワールド座標</param>
+		/// <param name="boardPos">変換された盤上のマス座標</param>
+		/// <returns>座標が盤内に収まっている場合はtrue</returns>
+		public bool TryGetBoardPosition(Vector3 worldPos, out Position boardPos)
+		{
+			int col = Mathf.RoundToInt(worldPos.x);
+			int row = Mathf.RoundToInt(worldPos.z);
+
+			boardPos = new Position(row, col);
+			return IsInBoard(row, col);
 		}
 	}
 }

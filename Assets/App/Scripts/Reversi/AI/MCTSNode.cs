@@ -1,164 +1,149 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Threading; // CancellationTokenのために追加
 
 namespace App.Reversi.AI
 {
-	/// <summary>
-	/// モンテカルロ木探索の各ノード
-	/// </summary>
 	public class MCTSNode
 	{
-		// UCB1計算用の探索定数 (sqrt(2) が一般的)
-		private static readonly double C = Math.Sqrt(2.0);
-		private static readonly Random _random = new Random();
+		private const double C_PUCT = 4.0;
+		private const int VIRTUAL_LOSS = 3;
 
-		public GameState State { get; }
-		public GameAction Action { get; } // このノードに至った親からの行動
-		public MCTSNode Parent { get; }
-		public List<MCTSNode> Children { get; }
+		public GameState State { get; private set; }
+		public MCTSNode Parent { get; private set; }
+		public Dictionary<GameAction, MCTSNode> Children { get; private set; }
 
-		public int VisitCount { get; private set; }
-		private List<GameAction> _untriedActions; // まだ試していない有効な手
-		private double _winScore; // AI視点での勝利スコア
-		private readonly object _lock = new object(); // SelfPlayManagerの並列実行用
+		private int _visitCount;
+		private double _totalValue;
+		private int _virtualLoss;
+		private readonly object _lock = new object();
 
-		/// <summary>
-		/// ノードのコンストラクタ
-		/// </summary>
-		public MCTSNode(GameState state, MCTSNode parent = null, GameAction action = null)
+		private float[] _policy;
+		private float _value;
+		private bool _isEvaluated;
+		private List<GameAction> _validActions;
+
+		public MCTSNode(GameState state, MCTSNode parent = null)
 		{
 			State = state;
 			Parent = parent;
-			Action = action;
-			Children = new List<MCTSNode>();
+			Children = new Dictionary<GameAction, MCTSNode>();
+			_policy = new float[12 * 12 * 5];
 
-			VisitCount = 0;
-			_winScore = 0.0;
-
-			// この状態で実行可能な手をシミュレーターから取得する
 			if (!state.IsGameOver)
 			{
-				// GetValidActionsはキャッシュ対応済み [cite: uploaded:ReversiSimulator.cs]
-				_untriedActions = ReversiSimulator.GetValidActions(state);
+				_validActions = OptimizedSimulator.GetValidActions(state);
 			}
 			else
 			{
-				_untriedActions = new List<GameAction>();
+				_validActions = new List<GameAction>();
+				_isEvaluated = true;
+				_value = OptimizedSimulator.GetResult(state);
+				Backpropagate(_value);
 			}
 		}
 
-		public double GetUCB1Score()
+		public GameAction SelectActionByPUCT()
 		{
 			lock (_lock)
 			{
-				if (VisitCount == 0) return double.PositiveInfinity;
-				if (Parent == null) return double.NegativeInfinity;
+				if (_validActions.Count == 0) return null;
 
-				return (_winScore / VisitCount) + C * Math.Sqrt(Math.Log(Parent.VisitCount) / VisitCount);
+				double bestScore = double.NegativeInfinity;
+				GameAction bestAction = null;
+
+				foreach (var action in _validActions)
+				{
+					double score = GetPUCTScore(action);
+					if (score > bestScore)
+					{
+						bestScore = score;
+						bestAction = action;
+					}
+				}
+				return bestAction;
 			}
 		}
 
-		public MCTSNode SelectBestChild()
+		private double GetPUCTScore(GameAction action)
+		{
+			double qValue = 0.0;
+			int childVisits = 0;
+
+			if (Children.TryGetValue(action, out var child))
+			{
+				childVisits = child._visitCount + child._virtualLoss;
+				qValue = childVisits > 0 ? child._totalValue / childVisits : 0.0;
+			}
+
+			double priorPolicy = GetPriorPolicyForAction(action);
+			double exploration = C_PUCT * priorPolicy * Math.Sqrt(_visitCount + _virtualLoss) / (1.0 + childVisits);
+
+			return -qValue + exploration;
+		}
+
+		public MCTSNode Expand(GameAction action)
 		{
 			lock (_lock)
 			{
-				return Children.OrderByDescending(c => c.GetUCB1Score()).First();
+				if (Children.TryGetValue(action, out var child))
+				{
+					child.AddVirtualLoss();
+					return child;
+				}
+
+				var nextState = GameState.GetFromPool();
+				nextState.CopyFrom(State);
+				OptimizedSimulator.ExecuteActionInPlace(nextState, action);
+
+				var newChild = new MCTSNode(nextState, this);
+				Children.Add(action, newChild);
+				newChild.AddVirtualLoss();
+				return newChild;
 			}
 		}
 
-		public MCTSNode Expand()
+		private void AddVirtualLoss() { lock (_lock) { _virtualLoss += VIRTUAL_LOSS; } }
+		private void RemoveVirtualLoss() { lock (_lock) { _virtualLoss -= VIRTUAL_LOSS; } }
+
+		public void SetEvaluationResult(float[] policy, float value)
 		{
 			lock (_lock)
 			{
-				if (!HasUntriedActions())
-					throw new InvalidOperationException("未試行の手がないノードでExpandが呼ばれました。");
-
-				GameAction action = _untriedActions[_random.Next(_untriedActions.Count)];
-				_untriedActions.Remove(action);
-
-				// 「ディープコピー版」を呼び出し、新しいGameStateを作成する [cite: uploaded:ReversiSimulator.cs]
-				GameState nextState = ReversiSimulator.ExecuteAction(State, action);
-
-				MCTSNode childNode = new MCTSNode(nextState, this, action);
-				Children.Add(childNode);
-
-				return childNode;
+				if (_isEvaluated) return;
+				_isEvaluated = true;
+				Array.Copy(policy, _policy, policy.Length);
+				_value = value;
+				RemoveVirtualLoss();
+				Backpropagate(value);
 			}
 		}
 
-		/// <summary>
-		/// このノードからランダムにゲームをシミュレート（プレイアウト）し、結果を返す (Simulation)
-		/// </summary>
-		public float Simulate()
-		{
-			return Simulate(CancellationToken.None); // CancellationTokenなしで呼び出す
-		}
-
-		public float Simulate(CancellationToken token)
-		{
-			// 1回だけディープコピーする [cite: uploaded:GameState.cs]
-			GameState simState = new GameState(State);
-
-			while (!simState.IsGameOver)
-			{
-				if (token.IsCancellationRequested) return 0.0f;
-
-				// キャッシュされた有効な手を取得 [cite: uploaded:ReversiSimulator.cs]
-				var actions = ReversiSimulator.GetValidActions(simState);
-
-				GameAction randomAction = (actions.Count > 0)
-					? actions[_random.Next(actions.Count)]
-					: null; // パス
-
-				// 「直接変更版」を呼び出し、simStateを直接書き換える [cite: uploaded:ReversiSimulator.cs]
-				ReversiSimulator.ExecuteActionInPlace(simState, randomAction);
-			}
-
-			return ReversiSimulator.GetResult(simState);
-		}
-
-		public void Backpropagate(float result)
+		public void Backpropagate(float value)
 		{
 			MCTSNode node = this;
 			while (node != null)
 			{
 				lock (node._lock)
 				{
-					node.VisitCount++;
-					// シミュレーション結果は「黒」視点 (1.0 = 黒勝利) [cite: uploaded:ReversiSimulator.cs]
-					if (node.State.CurrentPlayer == StoneColor.Black)
-					{
-						if (result == 1.0f) node._winScore += 1.0;
-						else if (result == 0.5f) node._winScore += 0.5;
-					}
-					else if (node.State.CurrentPlayer == StoneColor.White)
-					{
-						if (result == -1.0f) node._winScore += 1.0;
-						else if (result == 0.5f) node._winScore += 0.5;
-					}
+					node._visitCount++;
+					node._totalValue += value;
 				}
+				value = -value;
 				node = node.Parent;
 			}
 		}
 
-		public bool IsLeafNode() => Children.Count == 0;
-		public bool HasUntriedActions()
+		public bool IsLeafAndNotEvaluated() { lock (_lock) { return Children.Count == 0 && !_isEvaluated; } }
+		public bool IsGameOver() => State.IsGameOver;
+		public int GetVisitCount() => _visitCount;
+		public bool IsEvaluated() => _isEvaluated;
+
+		private float GetPriorPolicyForAction(GameAction action)
 		{
-			lock (_lock)
-			{
-				return _untriedActions.Count > 0;
-			}
+			int posIndex = action.Position.Row * 12 + action.Position.Col;
+			int typeIndex = (int)action.Type;
+			int index = typeIndex * 144 + posIndex;
+			return index < _policy.Length ? _policy[index] : 0.0f;
 		}
-		public MCTSNode GetMostVisitedChild()
-		{
-			lock (_lock)
-			{
-				if (Children.Count == 0) return null;
-				return Children.OrderByDescending(c => c.VisitCount).FirstOrDefault();
-			}
-		}
-		public int GetVisitCount() => VisitCount;
 	}
 }
