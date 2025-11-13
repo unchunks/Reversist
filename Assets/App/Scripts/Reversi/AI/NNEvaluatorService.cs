@@ -86,17 +86,18 @@ namespace App.Reversi.AI
 					nodesToEvaluate.Add(node);
 				}
 
-				using (var inputTensor = new Tensor(nodesToEvaluate.Count, 12, 12, 2))
-				{
-					for (int i = 0; i < nodesToEvaluate.Count; i++)
-					{
-						float[] stateData = ConvertStateToInputTensor(nodesToEvaluate[i].State);
-						for (int j = 0; j < stateData.Length; j++)
-						{
-							inputTensor[i, j] = stateData[j];
-						}
-					}
+				int batchCount = nodesToEvaluate.Count;
+				const int inputSizePerNode = 12 * 12 * 2;
+				float[] batchInputData = new float[batchCount * inputSizePerNode];
 
+				for (int i = 0; i < batchCount; i++)
+				{
+					float[] stateData = ConvertStateToInputTensor(nodesToEvaluate[i].State);
+					Array.Copy(stateData, 0, batchInputData, i * inputSizePerNode, inputSizePerNode);
+				}
+
+				using (var inputTensor = new Tensor(batchCount, 12, 12, 2, batchInputData))
+				{
 					_worker.Execute(inputTensor);
 
 					Tensor policyTensor = _worker.PeekOutput("policy");

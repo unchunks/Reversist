@@ -1,0 +1,82 @@
+[Debug] Prior policy for action App.Reversi.AI.GameAction is invalid (-12.66133). Setting to 0.0f.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is invalid (-12.65775). Setting to 0.0f.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is invalid (-12.64887). Setting to 0.0f.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is invalid (-12.64624). Setting to 0.0f.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is > 1.0 (5.982238). NN output may be broken.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is > 1.0 (6.080602). NN output may be broken.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is > 1.0 (6.081291). NN output may be broken.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is > 1.0 (6.06305). NN output may be broken.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is > 1.0 (6.126624). NN output may be broken.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is > 1.0 (6.13738). NN output may be broken.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is > 1.0 (6.132711). NN output may be broken.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is > 1.0 (6.052015). NN output may be broken.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is invalid (-0.782975). Setting to 0.0f.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is invalid (-0.6550561). Setting to 0.0f.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is invalid (-0.8205181). Setting to 0.0f.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is invalid (-0.353503). Setting to 0.0f.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is > 1.0 (6.597167). NN output may be broken.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is > 1.0 (6.526486). NN output may be broken.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is > 1.0 (6.504849). NN output may be broken.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is > 1.0 (6.51127). NN output may be broken.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is invalid (-12.66133). Setting to 0.0f.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is invalid (-12.65775). Setting to 0.0f.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is invalid (-12.64887). Setting to 0.0f.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is invalid (-12.64624). Setting to 0.0f.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is > 1.0 (5.982238). NN output may be broken.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is > 1.0 (6.080602). NN output may be broken.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is > 1.0 (6.081291). NN output may be broken.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is > 1.0 (6.06305). NN output may be broken.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is > 1.0 (6.126624). NN output may be broken.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is > 1.0 (6.13738). NN output may be broken.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is > 1.0 (6.132711). NN output may be broken.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is > 1.0 (6.052015). NN output may be broken.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is invalid (-0.782975). Setting to 0.0f.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is invalid (-0.6550561). Setting to 0.0f.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is invalid (-0.8205181). Setting to 0.0f.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is invalid (-0.353503). Setting to 0.0f.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is > 1.0 (6.597167). NN output may be broken.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is > 1.0 (6.526486). NN output may be broken.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is > 1.0 (6.504849). NN output may be broken.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is > 1.0 (6.51127). NN output may be broken.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is invalid (-12.66133). Setting to 0.0f.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is invalid (-12.65775). Setting to 0.0f.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is invalid (-12.64887). Setting to 0.0f.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is invalid (-12.64624). Setting to 0.0f.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is > 1.0 (5.982238). NN output may be broken.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is > 1.0 (6.080602). NN output may be broken.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is > 1.0 (6.081291). NN output may be broken.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is > 1.0 (6.06305). NN output may be broken.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is > 1.0 (6.126624). NN output may be broken.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is > 1.0 (6.13738). NN output may be broken.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is > 1.0 (6.132711). NN output may be broken.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is > 1.0 (6.052015). NN output may be broken.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is invalid (-0.782975). Setting to 0.0f.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is invalid (-0.6550561). Setting to 0.0f.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is invalid (-0.8205181). Setting to 0.0f.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is invalid (-0.353503). Setting to 0.0f.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is > 1.0 (6.597167). NN output may be broken.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is > 1.0 (6.526486). NN output may be broken.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is > 1.0 (6.504849). NN output may be broken.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is > 1.0 (6.51127). NN output may be broken.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is invalid (-12.66133). Setting to 0.0f.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is invalid (-12.65775). Setting to 0.0f.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is invalid (-12.64887). Setting to 0.0f.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is invalid (-12.64624). Setting to 0.0f.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is > 1.0 (5.982238). NN output may be broken.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is > 1.0 (6.080602). NN output may be broken.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is > 1.0 (6.081291). NN output may be broken.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is > 1.0 (6.06305). NN output may be broken.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is > 1.0 (6.126624). NN output may be broken.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is > 1.0 (6.13738). NN output may be broken.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is > 1.0 (6.132711). NN output may be broken.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is > 1.0 (6.052015). NN output may be broken.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is invalid (-0.782975). Setting to 0.0f.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is invalid (-0.6550561). Setting to 0.0f.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is invalid (-0.8205181). Setting to 0.0f.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is invalid (-0.353503). Setting to 0.0f.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is > 1.0 (6.597167). NN output may be broken.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is > 1.0 (6.526486). NN output may be broken.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is > 1.0 (6.504849). NN output may be broken.
+[Debug] Prior policy for action App.Reversi.AI.GameAction is > 1.0 (6.51127). NN output may be broken.
+AssertionException: Assertion failure. Values are not equal.
+Expected: 4608 == 18432

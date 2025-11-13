@@ -7275,7 +7275,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 68726b6ebbb5de14aa81544ae557c6e1, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::App.Reversi.Core.AIAgent
-  _mctsIterationsPerMove: 1000
+  _mctsIterationsPerMove: 10
 --- !u!1 &1810285163
 GameObject:
   m_ObjectHideFlags: 0
