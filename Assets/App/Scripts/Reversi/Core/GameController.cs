@@ -19,10 +19,6 @@ namespace App.Reversi.Core
     /// </summary>
     public class GameController : MonoBehaviour
     {
-        [Header("Game Settings")]
-        [SerializeField] private GameMode _gameMode = GameMode.PVE;
-        [SerializeField] private StoneColor _aiColor = StoneColor.White;
-
         [Header("References")]
         [SerializeField] private Camera _mainCam;
 
@@ -34,10 +30,14 @@ namespace App.Reversi.Core
         [Inject] private IPublisher<RequestPutStoneMessage> _requestPutStonePublisher;
         [Inject] private IPublisher<TurnChangedMessage> _turnChangedPublisher;
         [Inject] private IPublisher<GameOverMessage> _gameOverPublisher;
+        [Inject] private IPublisher<GameStartMessage> _gameStartPublisher;
         [Inject] private ISubscriber<CellClickedMessage> _cellClickedSubscriber;
         [Inject] private ISubscriber<BoardInfo> _boardInfoSubscriber;
         [Inject] private ISubscriber<SelectedStoneTypeInfo> _selectedStoneTypeSubscriber;
 
+        private GameMode _gameMode = ToReversiValues.GameMode;
+        private StoneColor _aiColor = ToReversiValues.AiColor;
+        
         private bool _isGameOver;
         private StoneColor _currentPlayer;
         private Dictionary<StoneColor, StoneType> _currentSelectedType;
@@ -64,14 +64,26 @@ namespace App.Reversi.Core
                 await _mainCam.transform.DOMoveY(size, 1).SetEase(Ease.OutBounce).ToUniTask();
             };
 
-            // UIとハイライトの初期化
-            _board.UpdateHighlight(_currentPlayer, _currentSelectedType[_currentPlayer]);
-            _turnChangedPublisher.Publish(new TurnChangedMessage(_currentPlayer));
-
             // AIの初期化を追加
             if (_gameMode == GameMode.PVE)
             {
                 _aiAgent.Initialize(_aiColor);
+            }
+
+            // UIとハイライトの初期化
+            _board.UpdateHighlight(_currentPlayer, _currentSelectedType[_currentPlayer]);
+            _gameStartPublisher.Publish(new GameStartMessage(_gameMode, _aiColor));
+            _turnChangedPublisher.Publish(new TurnChangedMessage(_currentPlayer));
+
+            if (_gameMode == GameMode.PVE && _currentPlayer == _aiColor)
+            {
+                // AIのターン：プレイヤーの入力を無効化
+                _inputManager.SetInputActive(false);
+            }
+            else
+            {
+                // 人間のターン：プレイヤーの入力を有効化
+                _inputManager.SetInputActive(true);
             }
         }
 

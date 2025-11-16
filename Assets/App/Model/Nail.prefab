@@ -9,9 +9,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 3594301770876687785}
-  - component: {fileID: 345965013040413796}
   - component: {fileID: 169508358151218966}
-  - component: {fileID: 6948066518262341926}
   m_Layer: 0
   m_Name: Nail
   m_TagString: Untagged
@@ -35,18 +33,6 @@ Transform:
   - {fileID: 4920556212041890647}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &345965013040413796
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1556671068374138926}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 2be6f0aa7b257d64c823b4c9cf4426db, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
 --- !u!95 &169508358151218966
 Animator:
   serializedVersion: 7
@@ -69,18 +55,6 @@ Animator:
   m_AllowConstantClipSamplingOptimization: 1
   m_KeepAnimatorStateOnDisable: 0
   m_WriteDefaultValuesOnDisable: 0
---- !u!114 &6948066518262341926
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1556671068374138926}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 2be6f0aa7b257d64c823b4c9cf4426db, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
 --- !u!1001 &4883004464826703036
 PrefabInstance:
   m_ObjectHideFlags: 0

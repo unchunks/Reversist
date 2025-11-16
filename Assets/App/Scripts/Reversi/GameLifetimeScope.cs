@@ -34,6 +34,7 @@ namespace App.Reversi
             builder.RegisterMessageBroker<TurnChangedMessage>(options);
             builder.RegisterMessageBroker<AvailableCountChangedMessage>(options);
             builder.RegisterMessageBroker<GameOverMessage>(options);
+            builder.RegisterMessageBroker<GameStartMessage>(options);
             builder.RegisterMessageBroker<PlaySoundEffectMessage>(options);
             builder.RegisterMessageBroker<PlayVFXMessage>(options);
             builder.RegisterMessageBroker<AIThinkingMessage>(options);

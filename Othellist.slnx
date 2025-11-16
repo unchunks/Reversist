@@ -1,0 +1,12 @@
+﻿<Solution>
+  <Project Path="Assembly-CSharp.csproj" />
+  <Project Path="UniRx.csproj" />
+  <Project Path="Adobe.Substance.csproj" />
+  <Project Path="Adobe.Substance.Runtime.csproj" />
+  <Project Path="Adobe.SubstanceEditor.csproj" />
+  <Project Path="UniRx.Examples.csproj" />
+  <Project Path="Assembly-CSharp-firstpass.csproj" />
+  <Project Path="Assembly-CSharp-Editor.csproj" />
+  <Project Path="Adobe.Substance.Connector.Unity.csproj" />
+  <Project Path="Adobe.Substance.Connector.csproj" />
+</Solution>

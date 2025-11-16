@@ -10,8 +10,6 @@ namespace App.Reversi.Core
 {
     public class AIAgent : MonoBehaviour
     {
-        [Header("AI Settings")]
-        [SerializeField] private int _thinkingTimeMilliseconds = 1000; // 思考時間
 
         [Inject] private Board _board;
         [Inject] private PlayerInventory _playerInventory;
@@ -21,8 +19,11 @@ namespace App.Reversi.Core
 
         [Inject] private ISubscriber<TurnChangedMessage> _turnChangedSubscriber;
 
+        private int _thinkingTimeMilliseconds = ToReversiValues.AiThinkTime; // 思考時間
+
         private StoneColor _aiColor = StoneColor.None;
         private bool _isAITurn = false;
+        private MCTS mctsAlgorithm = new MCTS();
 
         [Inject]
         private void Construct()
@@ -68,11 +69,19 @@ namespace App.Reversi.Core
             GameState currentState = BuildCurrentGameState();
 
             // MCTS実行（メインスレッドをブロックしないよう、別スレッドで実行）
-            GameAction bestAction = await UniTask.RunOnThreadPool(() =>
+            MCTSSearchResult result = await UniTask.RunOnThreadPool(() =>
             {
                 // MCTSに思考させる
-                return MCTS.Search(currentState, _thinkingTimeMilliseconds);
+                return mctsAlgorithm.Search(currentState, _thinkingTimeMilliseconds);
             }, cancellationToken: this.GetCancellationTokenOnDestroy()); // オブジェクト破棄時（AI思考中にゲームを終了したとき）にキャンセル可能にする
+
+            // ベンチマーク結果をログに出力
+            UnityEngine.Debug.Log($"[MCTS Benchmark] Time: {result.ElapsedMilliseconds} ms");
+            UnityEngine.Debug.Log($"[MCTS Benchmark] Sims: {result.TotalSimulations} simulations");
+            UnityEngine.Debug.Log($"[MCTS Benchmark] Speed: {result.SimulationsPerSecond:F2} S/s");
+
+            // 実際の手は .BestAction プロパティから取得
+            GameAction bestAction = result.BestAction;
 
             // 思考が終わったことを通知
             Debug.Log("AI思考終了");

@@ -86,5 +86,13 @@ namespace App.Reversi
         {
             _observeColor = color;
         }
+
+        public void SetInteractable(bool isInteractable)
+        {
+            foreach (var toggle in _toggleComponents)
+            {
+                toggle.interactable = isInteractable;
+            }
+        }
     }
 }

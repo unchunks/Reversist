@@ -1,3 +1,4 @@
+using App.Reversi.Core;
 using App.Reversi.Messaging;
 using Cysharp.Threading.Tasks;
 using DG.Tweening;
@@ -34,6 +35,7 @@ namespace App.Reversi
         [Inject] private ISubscriber<BoardInfo> _boardInfoSubscriber;
         [Inject] private ISubscriber<TurnChangedMessage> _turnChangedSubscriber;
         [Inject] private ISubscriber<GameOverMessage> _gameOverSubscriber;
+        [Inject] private ISubscriber<GameStartMessage> _gameStartSubscriber;
         [Inject] private ISubscriber<AvailableCountChangedMessage> _countSubscriber;
         [Inject] private ISubscriber<AIThinkingMessage> _aiThinkingSubscriber;
 
@@ -66,6 +68,7 @@ namespace App.Reversi
             _boardInfoSubscriber.Subscribe(UpdateUI);
             _turnChangedSubscriber.Subscribe(msg => SetTopText(msg.CurrentPlayer));
             _gameOverSubscriber.Subscribe(msg => ShowResultView(msg).Forget());
+            _gameStartSubscriber.Subscribe(SetShowPanel);
             _countSubscriber.Subscribe(msg => UpdateAvailableCount(msg.Color, msg.Type, msg.Count));
             _aiThinkingSubscriber.Subscribe(OnAIThinking);
         }
@@ -77,16 +80,13 @@ namespace App.Reversi
 
         private void OnAIThinking(AIThinkingMessage msg)
         {
-            Debug.Log("AIの思考状態が変化: " + msg.AiColor.ToString() + " IsThinking=" + msg.IsThinking.ToString());
             if (msg.IsThinking)
             {
-                Debug.Log("AIが思考中です");
                 _aiText.text = $"AI({msg.AiColor.ToString()})が思考中...";
                 _aiText.gameObject.SetActive(true);
             }
             else
             {
-                Debug.Log("AIの思考が終了しました");
                 _aiText.gameObject.SetActive(false);
             }
         }
@@ -148,13 +148,37 @@ namespace App.Reversi
             _restartButton.gameObject.SetActive(true);
             _restartButton.transform.localScale = Vector3.zero;
             await _restartButton.transform.DOScale(Vector3.one, 0.2f).ToUniTask();
+        }
 
+        public void SetShowPanel(GameStartMessage msg)
+        {
+            if (msg.GameMode != GameMode.PVE)
+            {
+                return;
+            }
+
+            _blackPanel.SetInteractable(msg.AiColor != StoneColor.Black);
+            _whitePanel.SetInteractable(msg.AiColor != StoneColor.White);
+
+            // プレイヤーの色のパネルを下側に移動
+            if (msg.AiColor == StoneColor.Black)
+            {
+                var tempPosition = _blackPanel.transform.localPosition;
+                _blackPanel.transform.localPosition = _whitePanel.transform.localPosition;
+                _whitePanel.transform.localPosition = tempPosition;
+            }
         }
 
         public void OnRestart()
         {
             Scene activeScene = SceneManager.GetActiveScene();
             SceneManager.LoadScene(activeScene.name);
+        }
+
+        public void BackToHome()
+        {
+            string homeScene = "HomeScene";
+            SceneManager.LoadScene(homeScene);
         }
 
         /// <summary>

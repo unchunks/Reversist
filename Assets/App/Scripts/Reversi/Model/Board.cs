@@ -10,7 +10,6 @@ using Unity.VisualScripting;
 using UnityEngine;
 using VContainer;
 using VContainer.Unity;
-using static UnityEditor.PlayerSettings;
 
 namespace App.Reversi
 {
