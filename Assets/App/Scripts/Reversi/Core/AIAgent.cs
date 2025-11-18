@@ -62,7 +62,10 @@ namespace App.Reversi.Core
                 _thinkingTimeMilliseconds
             ).AttachExternalCancellation(this.GetCancellationTokenOnDestroy());
 
-            // ログは削除しました
+            // シミュレーション性能ログの出力
+            UnityEngine.Debug.Log($"[MCTS Benchmark] Time: {result.ElapsedMilliseconds} ms");
+            UnityEngine.Debug.Log($"[MCTS Benchmark] Sims: {result.TotalSimulations} simulations");
+            UnityEngine.Debug.Log($"[MCTS Benchmark] Speed: {result.SimulationsPerSecond:F2} S/s");
 
             GameAction bestAction = result.BestAction;
 

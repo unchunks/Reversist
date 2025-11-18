@@ -5,7 +5,7 @@ using UnityEngine;
 namespace App.Reversi.AI
 {
     /// <summary>
-    /// 高速化された評価関数（位置テーブル + 確定石 + Mobility + 危機回避）
+    /// 評価関数（位置テーブル + 確定石 + Mobility + 危機回避）
     /// </summary>
     public static class ReversiEvaluator
     {
@@ -58,7 +58,7 @@ namespace App.Reversi.AI
 
         public static double Evaluate(GameState state)
         {
-            // 1. 終局時の評価
+            // 終局時の評価
             if (state.IsGameOver)
             {
                 int diff = state.StoneCount[StoneColor.Black] - state.StoneCount[StoneColor.White];
@@ -67,12 +67,12 @@ namespace App.Reversi.AI
                 return 0.0;
             }
 
-            // 2. 全滅リスク評価（Survival Instinct）
-            // 石数が少ない状態は、次の瞬間の死を意味する
+            // 全滅リスク評価（Survival Instinct）
+            // 石数が少ない状態は、すぐ負ける
             int blackCount = state.StoneCount[StoneColor.Black];
             int whiteCount = state.StoneCount[StoneColor.White];
 
-            if (blackCount <= 2) return -18000.0; // 死の一歩手前
+            if (blackCount <= 2) return -18000.0; // 全滅の一歩手前
             if (whiteCount <= 2) return 18000.0;
 
             int size = state.CurrentBoardSize;
@@ -86,7 +86,7 @@ namespace App.Reversi.AI
             double whiteScore = 0;
             int offset = (GameState.MAX_BOARD_SIZE - size) / 2;
 
-            // 3. 位置評価
+            // 位置評価
             for (int r = 0; r < size; r++)
             {
                 for (int c = 0; c < size; c++)
@@ -104,17 +104,15 @@ namespace App.Reversi.AI
                 }
             }
 
-            // 4. Mobility (着手可能数)
-            // 相手の手を減らすことの重要性は変わらない
+            // Mobility (着手可能数)
             int validMoves = ReversiSimulator.GetValidActions(state).Count;
             double mobilityBonus = validMoves * 10.0;
 
             if (state.CurrentPlayer == StoneColor.Black) blackScore += mobilityBonus;
             else whiteScore += mobilityBonus;
 
-            // 5. DelayReverseスタックの評価（自殺志願度チェック）
-            // ここが重要。DelayReverseは「敵に回る可能性が高い裏切り者」として扱う。
-            // 1ターンで爆発するため、現在スタックにあるものは「次の相手手番終了時」に確実に爆発する。
+            // DelayReverseスタックの評価（負債リスク）
+            // DelayReverseは「敵に回る可能性が高い裏切り者」として扱う。
             foreach (var delayItem in state.DelayReverseStack)
             {
                 Position pos = delayItem.Pos;
@@ -133,9 +131,7 @@ namespace App.Reversi.AI
                     }
 
                     // 懲罰的ペナルティ
-                    // 自分の色のDelay石は、裏切って相手の色になるリスクの塊。
-                    // 基本値 200点 + 位置価値の10倍のペナルティを与える。
-                    // これにより、「よほどの勝算（確実なコンボ）」がない限りDelay石を打たなくなる。
+                    // Delay石を持っている側（裏切られる側）に大きなマイナス
                     double penalty = 200.0 + (posValue * 10.0);
 
                     if (color == StoneColor.Black) blackScore -= penalty;

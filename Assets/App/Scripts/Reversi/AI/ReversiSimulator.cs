@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace App.Reversi.AI
 {
     /// <summary>
-    /// Unityに依存せず、純粋なC#ロジックだけでゲームを高速にシミュレートする（最適化版）
+    /// Unityに依存せず、純粋なC#ロジックだけでゲームを高速にシミュレートする
     /// </summary>
     public static class ReversiSimulator
     {
