@@ -1,60 +1,91 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 
 namespace App.Reversi.AI
 {
-    // ============================================================================
-    // MCTSノードクラス
-    // ============================================================================
     public class MCTSNode
     {
         public GameState State { get; }
-        public GameAction Action { get; }
         public MCTSNode Parent { get; }
-        public int Visits { get; private set; }
+        public GameAction Action { get; } // 親からこのノードに遷移したときの手
+        public List<MCTSNode> Children { get; private set; } // プロパティとして公開
+        public List<GameAction> UntriedActions { get; }
+        public StoneColor PlayerColor { get; } // このノードの手番プレイヤー
+
+        public int VisitCount { get; private set; }
         public double TotalScore { get; private set; }
 
-        private List<MCTSNode> _children;
-        private List<GameAction> _untriedActions;
-        private readonly StoneColor _aiColor;
-
-        public MCTSNode(GameState state, StoneColor aiColor, MCTSNode parent = null, GameAction action = null)
+        public MCTSNode(GameState state, StoneColor playerColor, MCTSNode parent = null, GameAction action = null)
         {
             State = state;
-            Action = action;
             Parent = parent;
-            Visits = 0;
-            TotalScore = 0.0;
-            _aiColor = aiColor;
-            _children = new List<MCTSNode>();
-
-            if (!state.IsGameOver)
-            {
-                _untriedActions = ReversiSimulator.GetValidActions(state);
-            }
-            else
-            {
-                _untriedActions = new List<GameAction>();
-            }
+            Action = action;
+            PlayerColor = playerColor;
+            Children = new List<MCTSNode>();
+            UntriedActions = ReversiSimulator.GetValidActions(State);
+            VisitCount = 0;
+            TotalScore = 0;
         }
 
-        /// <summary>
-        /// UCB1値に基づいて最良の子ノードを選択
-        /// </summary>
-        public MCTSNode SelectBestChildUCB1(double explorationConstant)
+        public bool IsLeaf()
         {
-            if (_children.Count == 0)
-            {
-                throw new InvalidOperationException("子ノードが存在しません");
-            }
+            return Children.Count == 0;
+        }
 
+        public bool IsTerminal()
+        {
+            return State.IsGameOver;
+        }
+
+        public bool HasUntriedActions()
+        {
+            return UntriedActions.Count > 0;
+        }
+
+        public int GetUntriedActionsCount()
+        {
+            return UntriedActions.Count;
+        }
+
+        public int GetChildrenCount()
+        {
+            return Children.Count;
+        }
+
+        public MCTSNode Expand(Random random)
+        {
+            // 未試行の手からランダムに1つ選ぶ
+            int index = random.Next(UntriedActions.Count);
+            GameAction action = UntriedActions[index];
+            UntriedActions.RemoveAt(index);
+
+            // 新しい状態を作成
+            GameState nextState = ReversiSimulator.ExecuteAction(State, action);
+
+            // 新しいノードを作成（次は相手の番）
+            MCTSNode childNode = new MCTSNode(nextState, PlayerColor.Opponent(), this, action);
+            Children.Add(childNode);
+
+            return childNode;
+        }
+
+        public void Update(double result)
+        {
+            VisitCount++;
+            TotalScore += result;
+        }
+
+        // UCB1値が最大の子ノードを選択
+        public MCTSNode SelectBestChildUCB1(double c)
+        {
             MCTSNode bestChild = null;
-            double bestUCB1 = double.NegativeInfinity;
+            double bestUCB1 = double.MinValue;
 
-            foreach (var child in _children)
+            foreach (var child in Children)
             {
-                double ucb1 = child.CalculateUCB1(explorationConstant);
+                double ucb1 = (child.TotalScore / child.VisitCount) +
+                              c * Math.Sqrt(Math.Log(VisitCount) / child.VisitCount);
+
                 if (ucb1 > bestUCB1)
                 {
                     bestUCB1 = ucb1;
@@ -65,76 +96,22 @@ namespace App.Reversi.AI
             return bestChild;
         }
 
-        /// <summary>
-        /// UCB1値を計算
-        /// </summary>
-        private double CalculateUCB1(double c)
-        {
-            if (Visits == 0) return double.PositiveInfinity;
-            if (Parent == null) return double.NegativeInfinity;
-
-            double exploitation = TotalScore / Visits;
-            double exploration = c * Math.Sqrt(Math.Log(Parent.Visits) / Visits);
-
-            return exploitation + exploration;
-        }
-
-        /// <summary>
-        /// 未試行の手を展開
-        /// </summary>
-        public MCTSNode Expand(Random random)
-        {
-            if (_untriedActions.Count == 0)
-            {
-                throw new InvalidOperationException("未試行の手がありません");
-            }
-
-            int index = random.Next(_untriedActions.Count);
-            GameAction action = _untriedActions[index];
-            _untriedActions.RemoveAt(index);
-
-            GameState nextState = ReversiSimulator.ExecuteAction(State, action);
-            MCTSNode childNode = new MCTSNode(nextState, _aiColor, this, action);
-            _children.Add(childNode);
-
-            return childNode;
-        }
-
-        /// <summary>
-        /// ノードの統計を更新
-        /// </summary>
-        public void Update(double result)
-        {
-            Visits++;
-            TotalScore += result;
-        }
-
-        /// <summary>
-        /// 最も訪問回数が多い子ノードを取得
-        /// </summary>
+        // 最も訪問回数が多い子ノードを取得（最終的な手の選択用）
         public MCTSNode GetMostVisitedChild()
         {
-            if (_children.Count == 0) return null;
+            MCTSNode bestChild = null;
+            int maxVisits = -1;
 
-            MCTSNode bestChild = _children[0];
-            int maxVisits = bestChild.Visits;
-
-            foreach (var child in _children)
+            foreach (var child in Children)
             {
-                if (child.Visits > maxVisits)
+                if (child.VisitCount > maxVisits)
                 {
-                    maxVisits = child.Visits;
+                    maxVisits = child.VisitCount;
                     bestChild = child;
                 }
             }
 
             return bestChild;
         }
-
-        public bool IsLeaf() => _children.Count == 0;
-        public bool IsTerminal() => State.IsGameOver;
-        public bool HasUntriedActions() => _untriedActions.Count > 0;
-        public int GetUntriedActionsCount() => _untriedActions.Count;
-        public int GetChildrenCount() => _children.Count;
     }
 }

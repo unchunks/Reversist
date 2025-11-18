@@ -286,7 +286,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 8d1005ef3d8849e41ba57e8154a55f2e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::App.Home.ButtonSceneLoader
-  aiThinkTime: 10000
+  aiThinkTime: 5000
 --- !u!114 &200583685
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -663,7 +663,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 8d1005ef3d8849e41ba57e8154a55f2e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::App.Home.ButtonSceneLoader
-  aiThinkTime: 5000
+  aiThinkTime: 3000
 --- !u!1 &443189117
 GameObject:
   m_ObjectHideFlags: 0
@@ -3337,7 +3337,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 8d1005ef3d8849e41ba57e8154a55f2e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::App.Home.ButtonSceneLoader
-  aiThinkTime: 3000
+  aiThinkTime: 2000
 --- !u!1 &1728244124
 GameObject:
   m_ObjectHideFlags: 0

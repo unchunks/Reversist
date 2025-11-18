@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-// using System.Linq; // LINQは不要になりました
 
 namespace App.Reversi.AI
 {
@@ -9,19 +8,15 @@ namespace App.Reversi.AI
     /// </summary>
     public static class ReversiSimulator
     {
-        // 8方向の定義 (List<T>より配列の方が高速)
         private static readonly Position[] Dirs = {
             new Position(-1, -1), new Position(-1, 0), new Position(-1, 1),
             new Position(0, -1), new Position(0, 1),
             new Position(1, -1), new Position(1, 0), new Position(1, 1)
         };
 
-        // Positionオブジェクトの事前キャッシュ (GC負荷低減のため)
+        // Positionオブジェクトの事前キャッシュ
         private static readonly Position[,] _positionCache;
 
-        /// <summary>
-        /// 静的コンストラクタでPositionキャッシュを初期化
-        /// </summary>
         static ReversiSimulator()
         {
             _positionCache = new Position[GameState.MAX_BOARD_SIZE, GameState.MAX_BOARD_SIZE];
@@ -34,121 +29,79 @@ namespace App.Reversi.AI
             }
         }
 
-        /// <summary>
-        /// 現在の状態で、ゲームが終了しているかを判定する
-        /// </summary>
         public static float GetResult(GameState state)
         {
             if (state.IsGameOver)
             {
-                if (state.StoneCount[StoneColor.Black] > state.StoneCount[StoneColor.White]) return 1.0f; // 黒勝利
-                if (state.StoneCount[StoneColor.White] > state.StoneCount[StoneColor.Black]) return -1.0f; // 白勝利
-                return 0.5f; // 引き分け
+                if (state.StoneCount[StoneColor.Black] > state.StoneCount[StoneColor.White]) return 1.0f;
+                if (state.StoneCount[StoneColor.White] > state.StoneCount[StoneColor.Black]) return -1.0f;
+                return 0.5f;
             }
-            return 0.0f; // ゲーム続行
+            return 0.0f;
         }
 
-        /// <summary>
-        /// 現在の状態で実行可能なすべての手をリストアップする (最適化版)
-        /// </summary>
         public static List<GameAction> GetValidActions(GameState state)
         {
-            var actions = new List<GameAction>();
+            var actions = new List<GameAction>(32);
             StoneColor currentPlayer = state.CurrentPlayer;
 
-            // LINQを排除し、高速なforeachループに変更
+            int size = state.CurrentBoardSize;
+            int center = GameState.MAX_BOARD_SIZE / 2;
+            int halfSize = size / 2;
+            int minRow = center - halfSize;
+            int maxRow = center + halfSize;
+
             foreach (var kvp in state.Inventories[currentPlayer].AvailableCount)
             {
-                if (kvp.Value <= 0) continue; // 在庫がない
+                if (kvp.Value <= 0) continue;
 
                 StoneType type = kvp.Key;
                 bool isReverseType = type.IsReverseType();
 
-                for (int r = 0; r < GameState.MAX_BOARD_SIZE; r++)
+                for (int r = minRow; r < maxRow; r++)
                 {
-                    for (int c = 0; c < GameState.MAX_BOARD_SIZE; c++)
+                    for (int c = minRow; c < maxRow; c++)
                     {
-                        if (!IsInBoard(r, c, state.CurrentBoardSize)) continue;
-                        if (state.Board[r, c] != StoneColor.None) continue; // 空きマスでない
+                        if (state.Board[r, c] != StoneColor.None) continue;
 
-                        // Positionの生成をキャッシュから取得
                         Position pos = _positionCache[r, c];
 
-                        // 1. 通常の石（自分の色）で置けるか
-                        // CanReverseはリストを生成せず、boolだけを返す
-                        if (CanReverse(state, currentPlayer, pos))
+                        if (CanReverse(state, currentPlayer, pos, size))
                         {
                             actions.Add(new GameAction(pos, type, currentPlayer));
                         }
-                        // 2. リバース系の石で、相手の色で置けるか
-                        else if (isReverseType && CanReverse(state, currentPlayer.Opponent(), pos))
+                        else if (isReverseType && CanReverse(state, currentPlayer.Opponent(), pos, size))
                         {
                             actions.Add(new GameAction(pos, type, currentPlayer));
                         }
                     }
                 }
             }
-
-            // 重複を削除 (NormalとReverseで同じ場所が候補になった場合など)
-            // Note: 非常に稀だが、ロジックとして必要。
-            // しかし、MCTSのシミュレーションでは重複があっても本質的な問題はないため、
-            // さらなる速度が必要な場合は以下のDistinctをコメントアウトすることも検討
             return actions;
-
-            // 追記：GetValidActionsのロジックを変更したため、重複は発生しなくなりました。
-            // 以前は (r, c) のループの外で putColor をループしていたため、
-            // (r, c) が Black でも White でも置ける場合、(r, c, StoneType.Reverse) が2回追加されていました。
-            // 現在のロジックでは (r, c) に対して CanReverse(Black), CanReverse(White) をチェックし、
-            // どちらか一方でも true ならば actions.Add して break する（べきだが、
-            // 全ての石タイプを追加するために break していない）。
-
-            // ロジックの再検証：
-            // 石タイプ (Normal, Reverse)
-            //   - 盤面 (r, c)
-            //     - if (Normal) -> CanReverse(Player) -> Add(pos, Normal)
-            //     - if (Reverse) -> CanReverse(Player) OR CanReverse(Opponent) -> Add(pos, Reverse)
-
-            // 現在のロジック：
-            // 石タイプ (Normal, Extend, ...)
-            //   - 盤面 (r, c)
-            //     - pos = (r, c)
-            //     - if (CanReverse(Player, pos)) -> Add(pos, type, Player)
-            //     - else if (type.IsReverseType && CanReverse(Opponent, pos)) -> Add(pos, type, Player)
-
-            // このロジックでは、(r, c) が Player でも Opponent でも置けるマスの場合、
-            // 石タイプが Normal (IsReverseType=false) なら Add は1回。
-            // 石タイプが Reverse (IsReverseType=true) なら if (CanReverse(Player, pos)) が true になり
-            // Add(pos, Reverse, Player) が追加され、else if は実行されない。
-            // よって、重複は発生しません。
         }
 
-        /// <summary>
-        /// 行動を実行し、次の状態を返す (元の状態は変更しない) (最適化版)
-        /// </summary>
         public static GameState ExecuteAction(GameState currentState, GameAction action)
         {
-            // 状態をディープコピー
             GameState nextState = new GameState(currentState);
 
-            // 石を消費 
             nextState.Inventories[action.Player].Decrease(action.Type);
 
-            // 石を置く色を決定
             StoneColor putColor = action.Type.IsReverseType() ? action.Player.Opponent() : action.Player;
 
-            // ひっくり返す石を探す (効率化されたFindReversePosを呼ぶ)
-            List<Position> reversePos = FindReversePos(nextState, putColor, action.Position);
+            var reversePos = FindReversePos(nextState, putColor, action.Position);
 
-            // 石を置く 
-            nextState.Board[action.Position.Row, action.Position.Col] = putColor;
-            nextState.StoneTypes[action.Position.Row, action.Position.Col] = action.Type;
+            int r = action.Position.Row;
+            int c = action.Position.Col;
+            nextState.Board[r, c] = putColor;
+            nextState.StoneTypes[r, c] = action.Type;
             nextState.StoneCount[putColor]++;
 
-            // 石をひっくり返す
-            foreach (var pos in reversePos)
+            int count = reversePos.Count;
+            for (int i = 0; i < count; i++)
             {
+                Position pos = reversePos[i];
                 StoneColor originalColor = nextState.Board[pos.Row, pos.Col];
-                if (nextState.StoneTypes[pos.Row, pos.Col] != StoneType.Frozen) // 凍結石はひっくり返らない
+                if (nextState.StoneTypes[pos.Row, pos.Col] != StoneType.Frozen)
                 {
                     nextState.Board[pos.Row, pos.Col] = originalColor.Opponent();
                     nextState.StoneCount[originalColor]--;
@@ -156,91 +109,23 @@ namespace App.Reversi.AI
                 }
             }
 
-            // 遅延反転の処理
-            for (int i = nextState.DelayReverseStack.Count - 1; i >= 0; i--)
+            ProcessSpecialStones(nextState, action);
+
+            // 【修正】全滅（Wipeout）判定を追加
+            // どちらかの石が0になったら、即座にゲーム終了とする
+            if (nextState.StoneCount[StoneColor.Black] == 0 || nextState.StoneCount[StoneColor.White] == 0)
             {
-                var item = nextState.DelayReverseStack[i];
-                item.Delay--;
-                if (item.Delay <= 0)
-                {
-                    Position pos = item.Pos;
-                    if (nextState.Board[pos.Row, pos.Col] != StoneColor.None)
-                    {
-                        StoneColor afterColor = nextState.Board[pos.Row, pos.Col].Opponent();
-                        // 効率化されたFindReversePosを呼ぶ
-                        List<Position> reversePosDelay = FindReversePos(nextState, afterColor, pos);
-
-                        // 自身を反転
-                        StoneColor originalColor = nextState.Board[pos.Row, pos.Col];
-                        nextState.Board[pos.Row, pos.Col] = originalColor.Opponent();
-                        nextState.StoneCount[originalColor]--;
-                        nextState.StoneCount[originalColor.Opponent()]++;
-
-                        // 周囲を反転
-                        foreach (var p in reversePosDelay)
-                        {
-                            StoneColor oc = nextState.Board[p.Row, p.Col];
-                            if (nextState.StoneTypes[p.Row, p.Col] != StoneType.Frozen)
-                            {
-                                nextState.Board[p.Row, p.Col] = oc.Opponent();
-                                nextState.StoneCount[oc]--;
-                                nextState.StoneCount[oc.Opponent()]++;
-                            }
-                        }
-                    }
-                    nextState.DelayReverseStack.RemoveAt(i);
-                }
-                else
-                {
-                    nextState.DelayReverseStack[i] = item;
-                }
+                nextState.IsGameOver = true;
+                return nextState;
             }
 
-            // 特殊石の処理
-            switch (action.Type)
-            {
-                case StoneType.Extend:
-                    nextState.CurrentBoardSize = Math.Min(nextState.CurrentBoardSize + 2, GameState.MAX_BOARD_SIZE);
-                    break;
-                case StoneType.Reverse:
-                    StoneColor afterColor = nextState.Board[action.Position.Row, action.Position.Col].Opponent();
-                    // 効率化されたFindReversePosを呼ぶ
-                    reversePos = FindReversePos(nextState, afterColor, action.Position);
-                    // 自身を反転
-                    StoneColor originalColor = nextState.Board[action.Position.Row, action.Position.Col];
-                    nextState.Board[action.Position.Row, action.Position.Col] = originalColor.Opponent();
-                    nextState.StoneCount[originalColor]--;
-                    nextState.StoneCount[originalColor.Opponent()]++;
-                    // 周囲を反転
-                    foreach (var p in reversePos)
-                    {
-                        StoneColor oc = nextState.Board[p.Row, p.Col];
-                        if (nextState.StoneTypes[p.Row, p.Col] != StoneType.Frozen)
-                        {
-                            nextState.Board[p.Row, p.Col] = oc.Opponent();
-                            nextState.StoneCount[oc]--;
-                            nextState.StoneCount[oc.Opponent()]++;
-                        }
-                    }
-                    break;
-                case StoneType.DelayReverse:
-                    nextState.DelayReverseStack.Add(new ReverseCountDown(action.Position, GameState.DELAY_COUNT));
-                    break;
-            }
-
-            // ターン交代とパス/終了判定 (最適化)
             nextState.CurrentPlayer = nextState.CurrentPlayer.Opponent();
 
-            // GetValidActionsを1回だけ呼び出し、結果をキャッシュする
-            var opponentActions = GetValidActions(nextState);
-            if (opponentActions.Count == 0)
+            if (!HasValidMove(nextState))
             {
                 nextState.CurrentPlayer = nextState.CurrentPlayer.Opponent();
-
-                var playerActions = GetValidActions(nextState);
-                if (playerActions.Count == 0)
+                if (!HasValidMove(nextState))
                 {
-                    // 2回連続パス
                     nextState.IsGameOver = true;
                 }
             }
@@ -248,167 +133,180 @@ namespace App.Reversi.AI
             return nextState;
         }
 
-        #region Helper Methods
-
-        /// <summary>
-        /// (最適化) 石を置けるかどうかだけを判定する (GC負荷低減)
-        /// </summary>
-        private static bool CanReverse(GameState state, StoneColor putColor, Position putPos)
+        private static void ProcessSpecialStones(GameState state, GameAction action)
         {
-            foreach (var d in Dirs)
+            for (int i = state.DelayReverseStack.Count - 1; i >= 0; i--)
             {
-                if (CanReverseInDir(state, putColor, putPos, d.Row, d.Col))
+                var item = state.DelayReverseStack[i];
+                item.Delay--;
+                if (item.Delay <= 0)
                 {
-                    return true;
+                    ExecuteDelayReverse(state, item.Pos);
+                    state.DelayReverseStack.RemoveAt(i);
+                }
+                else
+                {
+                    state.DelayReverseStack[i] = item;
+                }
+            }
+
+            switch (action.Type)
+            {
+                case StoneType.Extend:
+                    state.CurrentBoardSize = Math.Min(state.CurrentBoardSize + 2, GameState.MAX_BOARD_SIZE);
+                    break;
+                case StoneType.Reverse:
+                    ExecuteReverseEffect(state, action.Position);
+                    break;
+                case StoneType.DelayReverse:
+                    state.DelayReverseStack.Add(new ReverseCountDown(action.Position, GameState.DELAY_COUNT));
+                    break;
+            }
+        }
+
+        private static void ExecuteDelayReverse(GameState state, Position pos)
+        {
+            if (state.Board[pos.Row, pos.Col] == StoneColor.None) return;
+
+            StoneColor afterColor = state.Board[pos.Row, pos.Col].Opponent();
+            var targets = FindReversePos(state, afterColor, pos);
+
+            FlipStone(state, pos);
+
+            foreach (var p in targets)
+            {
+                FlipStone(state, p);
+            }
+        }
+
+        private static void ExecuteReverseEffect(GameState state, Position pos)
+        {
+            StoneColor afterColor = state.Board[pos.Row, pos.Col].Opponent();
+            var targets = FindReversePos(state, afterColor, pos);
+
+            FlipStone(state, pos);
+
+            foreach (var p in targets)
+            {
+                FlipStone(state, p);
+            }
+        }
+
+        private static void FlipStone(GameState state, Position pos)
+        {
+            if (state.StoneTypes[pos.Row, pos.Col] == StoneType.Frozen) return;
+
+            StoneColor original = state.Board[pos.Row, pos.Col];
+            state.Board[pos.Row, pos.Col] = original.Opponent();
+            state.StoneCount[original]--;
+            state.StoneCount[original.Opponent()]++;
+        }
+
+        private static bool HasValidMove(GameState state)
+        {
+            StoneColor currentPlayer = state.CurrentPlayer;
+            int size = state.CurrentBoardSize;
+            int center = GameState.MAX_BOARD_SIZE / 2;
+            int halfSize = size / 2;
+            int min = center - halfSize;
+            int max = center + halfSize;
+
+            foreach (var kvp in state.Inventories[currentPlayer].AvailableCount)
+            {
+                if (kvp.Value <= 0) continue;
+                bool isReverse = kvp.Key.IsReverseType();
+
+                for (int r = min; r < max; r++)
+                {
+                    for (int c = min; c < max; c++)
+                    {
+                        if (state.Board[r, c] != StoneColor.None) continue;
+                        Position pos = _positionCache[r, c];
+
+                        if (CanReverse(state, currentPlayer, pos, size)) return true;
+                        if (isReverse && CanReverse(state, currentPlayer.Opponent(), pos, size)) return true;
+                    }
                 }
             }
             return false;
         }
 
-        /// <summary>
-        /// (最適化) 指定方向に返せる石があるかだけを判定する (GC負荷低減)
-        /// </summary>
-        private static bool CanReverseInDir(GameState state, StoneColor putColor, Position putPos, int dRow, int dCol)
+        #region Helper Methods
+
+        private static bool CanReverse(GameState state, StoneColor putColor, Position putPos, int size)
         {
-            var currentRow = putPos.Row + dRow;
-            var currentCol = putPos.Col + dCol;
-            bool foundOpponent = false;
-
-            while (IsInBoard(currentRow, currentCol, state.CurrentBoardSize))
-            {
-                StoneColor stone = state.Board[currentRow, currentCol];
-
-                if (stone == StoneColor.None)
-                {
-                    return false; // 空きマス
-                }
-
-                if (stone == putColor)
-                {
-                    // 自分の石が見つかった。間に相手の石が1つでもあればOK
-                    return foundOpponent;
-                }
-
-                // 相手の石
-                foundOpponent = true;
-
-                currentRow += dRow;
-                currentCol += dCol;
-            }
-
-            return false; // 盤の端まで相手の石だった
-        }
-
-
-        /// <summary>
-        /// (最適化) ひっくり返す石のリストを取得する (リスト生成を1回に)
-        /// </summary>
-        private static List<Position> FindReversePos(GameState state, StoneColor putColor, Position putPos)
-        {
-            // リストの生成をここ1回だけにする
-            var reversePos = new List<Position>();
             foreach (var d in Dirs)
             {
-                //FindReversePosInDirがリストに直接追加する
-                FindReversePosInDir(state, putColor, putPos, d.Row, d.Col, reversePos);
+                if (CanReverseInDir(state, putColor, putPos, d.Row, d.Col, size)) return true;
             }
-            return reversePos;
+            return false;
         }
 
-        /*
-        /// <summary>
-        /// (最適化) 指定方向にひっくり返す石を探し、引数のリストに追加する
-        /// </summary>
-        private static void FindReversePosInDir(GameState state, StoneColor putColor, Position putPos, int dRow, int dCol, List<Position> reversePos)
+        private static bool CanReverseInDir(GameState state, StoneColor putColor, Position putPos, int dRow, int dCol, int size)
         {
-            // このメソッド内でのリスト生成をなくす
-            var tempPos = new List<Position>();
-            var currentRow = putPos.Row + dRow;
-            var currentCol = putPos.Col + dCol;
+            int r = putPos.Row + dRow;
+            int c = putPos.Col + dCol;
+            bool foundOpponent = false;
 
-            while (IsInBoard(currentRow, currentCol, state.CurrentBoardSize))
+            int center = GameState.MAX_BOARD_SIZE / 2;
+            int half = size / 2;
+            int min = center - half;
+            int max = center + half;
+
+            while (r >= min && r < max && c >= min && c < max)
             {
-                StoneColor stone = state.Board[currentRow, currentCol];
+                StoneColor stone = state.Board[r, c];
+                if (stone == StoneColor.None) return false;
+                if (stone == putColor) return foundOpponent;
 
-                if (stone == StoneColor.None)
-                {
-                    return; // 反転できる石はない
-                }
+                foundOpponent = true;
+                r += dRow;
+                c += dCol;
+            }
+            return false;
+        }
+
+        private static List<Position> FindReversePos(GameState state, StoneColor putColor, Position putPos)
+        {
+            var list = new List<Position>(16);
+            foreach (var d in Dirs)
+            {
+                FindReversePosInDir(state, putColor, putPos, d.Row, d.Col, list);
+            }
+            return list;
+        }
+
+        private static void FindReversePosInDir(GameState state, StoneColor putColor, Position putPos, int dRow, int dCol, List<Position> result)
+        {
+            int r = putPos.Row + dRow;
+            int c = putPos.Col + dCol;
+            int count = 0;
+            int size = state.CurrentBoardSize;
+            int center = GameState.MAX_BOARD_SIZE / 2;
+            int half = size / 2;
+            int min = center - half;
+            int max = center + half;
+
+            while (r >= min && r < max && c >= min && c < max)
+            {
+                StoneColor stone = state.Board[r, c];
+                if (stone == StoneColor.None) return;
 
                 if (stone == putColor)
                 {
-                    // 自分の石が見つかったら、ためていた石を本リストに追加
-                    reversePos.AddRange(tempPos);
-                    return;
-                }
-
-                // 相手の石（反転候補）
-                tempPos.Add(_positionCache[currentRow, currentCol]); // キャッシュから取得
-
-                currentRow += dRow;
-                currentCol += dCol;
-            }
-
-            // 端まで行った場合
-            // Note: tempPos は破棄される (GC対象だが、FindReversePosInDir(List<P>...)よりはるかにマシ)
-            // さらなる最適化：tempPosも引数で使いまわす
-
-            // --- 訂正 ---
-            // `tempPos` のアロケーションが残っていました。これも排除します。
-            // 再度、`FindReversePosInDir` を修正します。
-        }
-        */
-
-        // --- `FindReversePosInDir` の最終最適化版 ---
-        // 上記の `FindReversePosInDir` は `tempPos` のアロケーションが残っているため、
-        // 以下の「アロケーションがゼロ」のバージョンに差し替えてください。
-        // （コードの可読性のため、差し替え後の全量を以下に記載します）
-
-
-        /// <summary>
-        /// (最適化) 指定方向にひっくり返す石を探し、引数のリストに追加する (GCゼロ版)
-        /// </summary>
-        private static void FindReversePosInDir(GameState state, StoneColor putColor, Position putPos, int dRow, int dCol, List<Position> reversePos)
-        {
-            var currentRow = putPos.Row + dRow;
-            var currentCol = putPos.Col + dCol;
-            
-            // 盤の端まで、反転候補の石が何個連続しているか
-            int opponentStonesCount = 0;
-            
-            while (IsInBoard(currentRow, currentCol, state.CurrentBoardSize))
-            {
-                StoneColor stone = state.Board[currentRow, currentCol];
-
-                if (stone == StoneColor.None)
-                {
-                    return; // 空きマス。反転不可
-                }
-                
-                if (stone == putColor)
-                {
-                    // 自分の石が見つかった。
-                    if (opponentStonesCount > 0)
+                    if (count > 0)
                     {
-                        // 間に相手の石があった場合、その分だけ遡ってリストに追加
-                        for (int i = 1; i <= opponentStonesCount; i++)
+                        for (int i = 1; i <= count; i++)
                         {
-                            int r = putPos.Row + (dRow * i);
-                            int c = putPos.Col + (dCol * i);
-                            reversePos.Add(_positionCache[r, c]);
+                            result.Add(_positionCache[putPos.Row + dRow * i, putPos.Col + dCol * i]);
                         }
                     }
-                    return; // 終了
+                    return;
                 }
-
-                // 相手の石
-                opponentStonesCount++;
-
-                currentRow += dRow;
-                currentCol += dCol;
+                count++;
+                r += dRow;
+                c += dCol;
             }
-            
-            // 盤の端まで相手の石だった場合 (反転不可)
         }
 
         public static bool IsInBoard(int row, int col, int currentBoardSize)

@@ -1,4 +1,4 @@
-using Cysharp.Threading.Tasks;
+ï»¿using Cysharp.Threading.Tasks;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -6,9 +6,6 @@ using System.Linq;
 
 namespace App.Reversi.AI
 {
-    /// <summary>
-    /// MCTS‚ÌŒŸõŒ‹‰Ê‚ğŠi”[‚·‚éƒNƒ‰ƒX
-    /// </summary>
     public class MCTSSearchResult
     {
         public GameAction BestAction { get; }
@@ -25,69 +22,34 @@ namespace App.Reversi.AI
         }
     }
 
-    /// <summary>
-    /// MCTSiƒ‚ƒ“ƒeƒJƒ‹ƒ–Ø’TõjƒƒCƒ“ƒNƒ‰ƒX
-    /// </summary>
     public class MCTS
     {
         private readonly Random _random;
-        private const double EXPLORATION_CONSTANT = 1.41; // ã2
+        private const double EXPLORATION_CONSTANT = 1.41;
 
         public MCTS()
         {
             _random = new Random();
         }
 
-        /// <summary>
-        /// MCTS‚ÅÅ‘Pè‚ğ’Tõ‚·‚é
-        /// </summary>
         public async UniTask<MCTSSearchResult> Search(GameState initialState, int milliseconds)
         {
-            UnityEngine.Debug.Log("[MCTS] Starting search for best move.");
             StoneColor aiColor = initialState.CurrentPlayer;
             Stopwatch sw = Stopwatch.StartNew();
 
-            // ƒtƒŒ[ƒ€ƒŒ[ƒg‚ğˆÛ‚·‚é‚½‚ß‚Ì§Œä•Ï”
-            long lastYieldTime = 0;
-            long yieldInterval = 10; // 10ms‚²‚Æ‚Éˆ—‚ğ’†’f‚µ‚Ä•`‰æ‚É÷‚é
+            // æ€è€ƒæ™‚é–“ã«å¿œã˜ãŸæ·±ã•èª¿æ•´
+            int playoutDepth;
+            if (milliseconds < 1000) playoutDepth = 5;
+            else if (milliseconds < 2000) playoutDepth = 20;
+            else if (milliseconds < 3000) playoutDepth = 40;
+            else playoutDepth = 64;
 
-            // AI‚ÌƒQ[ƒ€’†uÅ‰‚Ì1è–Úv‚Ì‚Æ‚«‚ÍAFrozen‚ğ‘Å‚ÂiAI‚Ì©–Å–h~—pj
-            bool isAIsFirstMove = false;
-            if (aiColor == StoneColor.Black &&
-                initialState.StoneCount[StoneColor.Black] + initialState.StoneCount[StoneColor.White] == 4)
-            {
-                // AI‚ªæèi•j‚ÅA‰Šúó‘Ôi2‘Î2j
-                isAIsFirstMove = true;
-            }
-            else if (aiColor == StoneColor.White &&
-                     initialState.StoneCount[StoneColor.Black] + initialState.StoneCount[StoneColor.White] == 5)
-            {
-                // AI‚ªŒãèi”’j‚ÅA‘Šè‚ª1è‚¾‚¯‘Å‚Á‚½ó‘Ô
-                isAIsFirstMove = true;
-            }
-
-            if (isAIsFirstMove)
-            {
-                UnityEngine.Debug.Log("[MCTS Override] Checking for Frozen on first move.");
-                // —LŒø‚Èè‚ğ‚·‚×‚Äæ“¾
-                var validActions = ReversiSimulator.GetValidActions(initialState);
-
-                // —LŒø‚Èè‚Ì’†‚É Frozen ‚ª‚ ‚é‚©’T‚·
-                GameAction frozenAction = validActions.FirstOrDefault(action => action.Type == StoneType.Frozen);
-
-                if (frozenAction != null)
-                {
-                    // ‚ ‚Á‚½ê‡AMCTS’Tõ‚ğƒXƒLƒbƒv‚µ‚Ä‘¦À‚É•Ô‚·
-                    sw.Stop();
-                    UnityEngine.Debug.Log("[MCTS Override] Forcing first move: Frozen.");
-                    return new MCTSSearchResult(frozenAction, 1, sw.ElapsedMilliseconds); // 1ƒVƒ~ƒ…ƒŒ[ƒVƒ‡ƒ“‚Æ‚µ‚Ä•Ô‚·
-                }
-                // Frozen ‚ªg‚¦‚È‚¢ê‡iİŒÉØ‚êA’u‚¯‚éêŠ‚ª‚È‚¢“™jA’Êí‚ÌMCTS’Tõ‚Ö
-            }
+            long lastYieldTime = sw.ElapsedMilliseconds;
+            long yieldInterval = 30;
 
             MCTSNode rootNode = new MCTSNode(initialState, aiColor);
 
-            // ‘Å‚Ä‚éè‚ª‚È‚¢ê‡
+            // æ‰“ã¦ã‚‹æ‰‹ãŒãªã„å ´åˆ
             if (rootNode.GetUntriedActionsCount() == 0 && rootNode.GetChildrenCount() == 0)
             {
                 sw.Stop();
@@ -96,82 +58,239 @@ namespace App.Reversi.AI
 
             int simulationCount = 0;
 
-            // ŠÔ§ŒÀ‚Ü‚Å’Tõ‚ğ‘±‚¯‚é
             while (sw.ElapsedMilliseconds < milliseconds)
             {
-                // WebGL—p‚Ì”ñ“¯Šú’†’fˆ—
-                // ˆê’èŠÔŒo‰ß‚µ‚½‚çŸ‚ÌƒtƒŒ[ƒ€‚Öˆ—‚ğ÷‚é
                 if (sw.ElapsedMilliseconds - lastYieldTime > yieldInterval)
                 {
                     await UniTask.Yield();
                     lastYieldTime = sw.ElapsedMilliseconds;
+                    if (sw.ElapsedMilliseconds >= milliseconds) break;
                 }
 
-                // Selectioni‘I‘ğj: UCB1’l‚ªÅ‘å‚Ìqƒm[ƒh‚ğ‘I‘ğ
-                MCTSNode selectedNode = Selection(rootNode);
+                // Selection
+                MCTSNode selectedNode = rootNode;
+                while (!selectedNode.IsLeaf() && !selectedNode.IsTerminal())
+                {
+                    selectedNode = selectedNode.SelectBestChildUCB1(EXPLORATION_CONSTANT);
+                }
 
-                // Expansioni“WŠJj: –¢s‚Ìè‚ª‚ ‚ê‚Î“WŠJ
+                // Expansion
                 if (selectedNode.HasUntriedActions() && !selectedNode.IsTerminal())
                 {
                     selectedNode = selectedNode.Expand(_random);
                 }
 
-                // SimulationiƒVƒ~ƒ…ƒŒ[ƒVƒ‡ƒ“j: ƒQ[ƒ€I—¹‚Ü‚Å‚‘¬ƒvƒŒƒCƒAƒEƒg
-                double result = Simulation(selectedNode, aiColor, _random);
+                // Simulation
+                double result = Simulation(selectedNode, aiColor, playoutDepth);
 
-                // Backpropagationi‹t“`”dj: Œ‹‰Ê‚ğeƒm[ƒh‚É“`”d
-                Backpropagation(selectedNode, result);
+                // Backpropagation
+                MCTSNode backNode = selectedNode;
+                while (backNode != null)
+                {
+                    backNode.Update(result);
+                    backNode = backNode.Parent;
+                }
 
                 simulationCount++;
             }
 
             sw.Stop();
 
-            // Å‚à–K–â‰ñ”‚ª‘½‚¢qƒm[ƒh‚ğ‘I‘ğ
-            MCTSNode bestChild = rootNode.GetMostVisitedChild();
+            // æœ€ã‚‚è¨ªå•å›æ•°ãŒå¤šã„æ‰‹ã‚’é¸ã¶ãŒã€å±é™ºãªæ‰‹ã¯å›é¿ã™ã‚‹
+            GameAction bestAction = SelectSafeBestAction(rootNode, aiColor);
 
             return new MCTSSearchResult(
-                bestChild?.Action,
+                bestAction,
                 simulationCount,
                 sw.ElapsedMilliseconds
             );
         }
 
         /// <summary>
-        /// Selection: —tƒm[ƒh‚Ü‚Å‘I‘ğ‚ğŒJ‚è•Ô‚·
+        /// æœ€å–„æ‰‹ã‚’é¸æŠã™ã‚‹ï¼ˆå®‰å…¨æ€§ãƒã‚§ãƒƒã‚¯ä»˜ãï¼‰
         /// </summary>
-        private MCTSNode Selection(MCTSNode node)
+        private GameAction SelectSafeBestAction(MCTSNode rootNode, StoneColor aiColor)
         {
-            while (!node.IsLeaf() && !node.IsTerminal())
+            // 1. ã¾ãšMCTSã®çµæœï¼ˆè¨ªå•å›æ•°é †ï¼‰ã‹ã‚‰ã€å®‰å…¨ãªæ‰‹ã‚’æ¢ã™
+            if (rootNode.Children != null && rootNode.Children.Count > 0)
             {
-                node = node.SelectBestChildUCB1(EXPLORATION_CONSTANT);
+                var sortedChildren = rootNode.Children
+                    .OrderByDescending(c => c.VisitCount)
+                    .ToList();
+
+                foreach (var child in sortedChildren)
+                {
+                    if (IsActionSafe(rootNode.State, child.Action, aiColor))
+                    {
+                        return child.Action;
+                    }
+                }
             }
-            return node;
+
+            // 2. ã€ç·Šæ€¥å›é¿ã€‘MCTSå€™è£œãŒã™ã¹ã¦å±é™ºï¼ˆã¾ãŸã¯ç©ºï¼‰ã ã£ãŸå ´åˆ
+            // æœªæ¢ç´¢ã®æ‰‹ã‚‚å«ã‚ã¦ã€å…¨ã¦ã®æœ‰åŠ¹æ‰‹ã‹ã‚‰ã€Œå®‰å…¨ãªæ‰‹ã€ã‚’ãƒ«ãƒ¼ãƒ«ãƒ™ãƒ¼ã‚¹ã§æ¢ã™
+            var allActions = ReversiSimulator.GetValidActions(rootNode.State);
+
+            // ãƒ©ãƒ³ãƒ€ãƒ ã«ã‚·ãƒ£ãƒƒãƒ•ãƒ«ã—ã¦åã‚Šã‚’é˜²ã
+            allActions = allActions.OrderBy(a => _random.Next()).ToList();
+
+            foreach (var action in allActions)
+            {
+                // NormalçŸ³ã‚’å„ªå…ˆçš„ã«ãƒã‚§ãƒƒã‚¯ï¼ˆç‰¹æ®ŠçŸ³ã¯è‡ªæ»…ãƒªã‚¹ã‚¯ãŒé«˜ã„ãŸã‚å¾Œå›ã—ï¼‰
+                if (action.Type == StoneType.Normal)
+                {
+                    if (IsActionSafe(rootNode.State, action, aiColor))
+                    {
+                        UnityEngine.Debug.LogWarning("[AI Safety] MCTSå€™è£œã«å®‰å…¨ãªæ‰‹ãŒãªãã€ç·Šæ€¥å›é¿ã§NormalçŸ³ã‚’é¸æŠã—ã¾ã—ãŸã€‚");
+                        return action;
+                    }
+                }
+            }
+
+            // Normalã§å®‰å…¨ãªæ‰‹ãŒãªã‘ã‚Œã°ã€ä»–ã®çŸ³ã‚‚ãƒã‚§ãƒƒã‚¯
+            foreach (var action in allActions)
+            {
+                if (action.Type != StoneType.Normal)
+                {
+                    if (IsActionSafe(rootNode.State, action, aiColor))
+                    {
+                        UnityEngine.Debug.LogWarning($"[AI Safety] MCTSå€™è£œã«å®‰å…¨ãªæ‰‹ãŒãªãã€ç·Šæ€¥å›é¿ã§{action.Type}ã‚’é¸æŠã—ã¾ã—ãŸã€‚");
+                        return action;
+                    }
+                }
+            }
+
+            // 3. ã©ã†ã‚ãŒã„ã¦ã‚‚å®‰å…¨ãªæ‰‹ãŒãªã„å ´åˆï¼ˆè©°ã¿ï¼‰
+            // è¨ªå•å›æ•°æœ€å¤§ã®æ‰‹ã«ç‰¹æ”»ã™ã‚‹
+            if (rootNode.Children != null && rootNode.Children.Count > 0)
+            {
+                return rootNode.GetMostVisitedChild().Action;
+            }
+
+            // ã“ã“ã«æ¥ã‚‹ã“ã¨ã¯ã»ã¼ãªã„ï¼ˆæœ‰åŠ¹æ‰‹ãŒ0ãªã‚‰å†’é ­ã§å¼¾ã‹ã‚Œã‚‹ï¼‰
+            return allActions.FirstOrDefault();
         }
 
         /// <summary>
-        /// Simulation: ƒQ[ƒ€I—¹‚Ü‚Å‚‘¬ƒvƒŒƒCƒAƒEƒg
+        /// ãã®æ‰‹ãŒã€Œå®‰å…¨ã€ã‹å³å¯†ã«ãƒã‚§ãƒƒã‚¯ã™ã‚‹
         /// </summary>
-        private double Simulation(MCTSNode node, StoneColor aiColor, Random random)
+        private bool IsActionSafe(GameState currentState, GameAction action, StoneColor aiColor)
         {
-            // Šù‚ÉI—¹‚µ‚Ä‚¢‚éê‡
+            // 1. è‡ªåˆ†ã®æ‰‹ã§ã‚²ãƒ¼ãƒ ãŒçµ‚ã‚ã‚‹å ´åˆï¼ˆå‹ã¡ãªã‚‰OKï¼‰
+            GameState nextState = ReversiSimulator.ExecuteAction(currentState, action);
+
+            if (nextState.IsGameOver)
+            {
+                double score = GetTerminalScore(nextState, aiColor);
+                return score > 0.0; // å‹ã¡(1.0)ã‹å¼•ãåˆ†ã‘(0.5)ãªã‚‰OK
+            }
+
+            // ã€è‡ªæ»…ãƒã‚§ãƒƒã‚¯ã€‘çŸ³ã®æ•°ãŒæ¥µç«¯ã«å°‘ãªã„ï¼ˆå…¨æ»… or 1å€‹æ®‹ã‚Šï¼‰ãªã‚‰NG
+            // Reverseã‚„DelayReverseã‚’ä½¿ã£ãŸçµæœã€è‡ªåˆ†ã®çŸ³ãŒ1å€‹ã ã‘æ®‹ã‚‹ã‚±ãƒ¼ã‚¹ã¯
+            // æ¬¡ã®ç›¸æ‰‹ã®ã‚¿ãƒ¼ãƒ³ã§å–ã‚‰ã‚Œã¦å…¨æ»…ã™ã‚‹ãƒªã‚¹ã‚¯ãŒæ¥µå¤§ãªã®ã§ç¦æ­¢ã™ã‚‹
+            int myStoneCount = nextState.StoneCount[aiColor];
+            if (myStoneCount <= 1)
+            {
+                return false;
+            }
+
+            // 2. ç›¸æ‰‹ï¼ˆæ•µï¼‰ã®ã‚¿ãƒ¼ãƒ³ã§ã®ã‚·ãƒŸãƒ¥ãƒ¬ãƒ¼ã‚·ãƒ§ãƒ³
+            var opponentActions = ReversiSimulator.GetValidActions(nextState);
+            if (opponentActions.Count == 0) return true; // ç›¸æ‰‹ãŒæ‰“ã¦ãªã„ï¼ˆãƒ‘ã‚¹ï¼‰ãªã‚‰å®‰å…¨
+
+            // ç‰¹æ®ŠçŸ³ã®å ´åˆã¯åˆ¤å®šã‚’å³ã—ãã™ã‚‹
+            bool isSpecialStone = (action.Type == StoneType.DelayReverse || action.Type == StoneType.Reverse);
+            double safetyThreshold = isSpecialStone ? 0.3 : 0.15;
+
+            foreach (var oppAction in opponentActions)
+            {
+                // A. ç›¸æ‰‹ã«è§’ã‚’å–ã‚‰ã‚Œã‚‹æ‰‹ãŒã‚ã‚‹ã‹ï¼Ÿ -> ã‚ã‚Œã°å±é™º
+                // ï¼ˆè‡ªåˆ†ãŒè§’ã‚’å–ã£ãŸç›´å¾Œãªã‚‰è¨±å®¹ã™ã‚‹ãƒ­ã‚¸ãƒƒã‚¯ã‚‚è€ƒãˆã‚‰ã‚Œã‚‹ãŒã€ä»Šå›ã¯å³ã—ãç¦æ­¢ï¼‰
+                if (IsCorner(oppAction.Position, nextState.CurrentBoardSize))
+                {
+                    return false;
+                }
+
+                // B. ç›¸æ‰‹ãŒãã®æ‰‹ã‚’æ‰“ã£ãŸçµæœã®ãƒã‚§ãƒƒã‚¯
+                GameState afterOpponentState = ReversiSimulator.ExecuteAction(nextState, oppAction);
+
+                // ã€å…¨æ»…ãƒã‚§ãƒƒã‚¯ã€‘ç›¸æ‰‹ã«æ‰“ãŸã‚Œã¦è‡ªåˆ†ã®çŸ³ãŒ0ã«ãªã‚‹ãªã‚‰NG
+                if (afterOpponentState.StoneCount[aiColor] == 0)
+                {
+                    return false;
+                }
+
+                // ã€è©°ã¿ãƒã‚§ãƒƒã‚¯ã€‘
+                if (afterOpponentState.IsGameOver)
+                {
+                    double myScore = GetTerminalScore(afterOpponentState, aiColor);
+                    if (myScore == 0.0) return false; // è² ã‘ç¢ºå®š
+                }
+                else
+                {
+                    // ç‰¹æ®ŠçŸ³ã‚’ä½¿ã£ãŸã®ã«ã€ãã®å¾Œåœ§å€’çš„ä¸åˆ©ã«ãªã‚‹ãªã‚‰é¿ã‘ã‚‹
+                    if (isSpecialStone)
+                    {
+                        double currentEval = EvaluateNonTerminalState(afterOpponentState, aiColor);
+                        if (currentEval < safetyThreshold)
+                        {
+                            return false;
+                        }
+                    }
+                }
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// æœ€ä½é™ã®å®‰å…¨æ€§ãƒã‚§ãƒƒã‚¯ï¼ˆå…¨æ»…ã¨è§’å–ã‚Šã ã‘å›é¿ï¼‰
+        /// ã‚·ãƒŸãƒ¥ãƒ¬ãƒ¼ã‚·ãƒ§ãƒ³ã®ãƒ—ãƒ¬ã‚¤ã‚¢ã‚¦ãƒˆä¸­ã«ä½¿ç”¨
+        /// </summary>
+        private bool IsActionBarelySafe(GameState currentState, GameAction action, StoneColor aiColor)
+        {
+            GameState nextState = ReversiSimulator.ExecuteAction(currentState, action);
+
+            // è‡ªæ»…ï¼ˆ1å€‹ä»¥ä¸‹ï¼‰ãƒã‚§ãƒƒã‚¯
+            if (nextState.StoneCount[aiColor] <= 1) return false;
+
+            if (nextState.IsGameOver) return true;
+
+            // ç›¸æ‰‹ã®å¿œæ‰‹ãƒã‚§ãƒƒã‚¯ï¼ˆç°¡æ˜“ç‰ˆï¼šæœ€åˆã«è¦‹ã¤ã‹ã£ãŸå±é™ºæ‰‹ã ã‘ã§å³NGï¼‰
+            var opponentActions = ReversiSimulator.GetValidActions(nextState);
+            foreach (var oppAction in opponentActions)
+            {
+                if (IsCorner(oppAction.Position, nextState.CurrentBoardSize)) return false;
+
+                // ç›¸æ‰‹ã®æ‰‹ã§å…¨æ»…ã™ã‚‹ã‹ï¼Ÿï¼ˆã“ã“ã¾ã§ã¯é‡ã„ã®ã§ãƒ—ãƒ¬ã‚¤ã‚¢ã‚¦ãƒˆä¸­ã¯è¦‹ãªã„æ‰‹ã‚‚ã‚ã‚‹ãŒã€å³æ­»å›é¿ã®ãŸã‚è¦‹ã‚‹ï¼‰
+                // ãŸã ã—ReversiSimulator.ExecuteActionã¯å°‘ã—é‡ã„ã®ã§ã€
+                // ãƒ—ãƒ¬ã‚¤ã‚¢ã‚¦ãƒˆé€Ÿåº¦é‡è¦–ãªã‚‰ã“ã“ã¯ã‚³ãƒ¡ãƒ³ãƒˆã‚¢ã‚¦ãƒˆã—ã€MCTSã®å­¦ç¿’ã«ä»»ã›ã‚‹ã¨ã„ã†æ‰‹ã‚‚ã‚ã‚‹ã€‚
+                // ä»Šå›ã¯ã€Œå¼±ã™ãã‚‹ã€ã®ã‚’é˜²ããŸã‚å…¥ã‚Œã‚‹ã€‚
+                /*
+                GameState afterOpponentState = ReversiSimulator.ExecuteAction(nextState, oppAction);
+                if (afterOpponentState.StoneCount[aiColor] == 0) return false;
+                */
+            }
+            return true;
+        }
+
+        private double Simulation(MCTSNode node, StoneColor aiColor, int maxDepth)
+        {
             if (node.IsTerminal())
             {
-                return EvaluateTerminalState(node.State, aiColor);
+                return GetTerminalScore(node.State, aiColor);
             }
 
             GameState simState = new GameState(node.State);
-            int depth = 0;
-            const int MAX_DEPTH = 50;
+            int moves = 0;
+            int boardSize = simState.CurrentBoardSize;
 
-            // ƒQ[ƒ€I—¹‚Ü‚½‚ÍÅ‘å[“x‚Ü‚Åi‚ß‚é
-            while (!simState.IsGameOver && depth < MAX_DEPTH)
+            while (moves < maxDepth && !simState.IsGameOver)
             {
-                var validActions = ReversiSimulator.GetValidActions(simState);
+                var actions = ReversiSimulator.GetValidActions(simState);
 
-                if (validActions.Count == 0)
+                if (actions.Count == 0)
                 {
-                    // ƒpƒX
                     simState.CurrentPlayer = simState.CurrentPlayer.Opponent();
                     var nextActions = ReversiSimulator.GetValidActions(simState);
                     if (nextActions.Count == 0)
@@ -182,168 +301,79 @@ namespace App.Reversi.AI
                 }
                 else
                 {
-                    // í—ª“IƒvƒŒƒCƒAƒEƒgF•]‰¿’lƒx[ƒX‚Ì‘I‘ğ
-                    GameAction selectedAction = SelectActionForSimulation(simState, validActions, aiColor, random);
+                    // ãƒ—ãƒ¬ã‚¤ã‚¢ã‚¦ãƒˆä¸­ã®æ‰‹é¸ã³
+                    GameAction selectedAction = SelectSimulationMove(simState, actions, boardSize);
                     simState = ReversiSimulator.ExecuteAction(simState, selectedAction);
-                    depth++;
+                    moves++;
                 }
             }
 
-            return EvaluateState(simState, aiColor);
+            if (simState.IsGameOver)
+            {
+                return GetTerminalScore(simState, aiColor);
+            }
+
+            return EvaluateNonTerminalState(simState, aiColor);
         }
 
-        /// <summary>
-        /// ƒVƒ~ƒ…ƒŒ[ƒVƒ‡ƒ“’†‚Ìè‘I‘ğií—ª“IƒvƒŒƒCƒAƒEƒgj
-        /// </summary>
-        private GameAction SelectActionForSimulation(GameState state, List<GameAction> actions, StoneColor aiColor, Random random)
+        private GameAction SelectSimulationMove(GameState state, List<GameAction> actions, int boardSize)
         {
-            double progress = CalculateProgress(state);
-            bool isCurrentPlayerAI = (state.CurrentPlayer == aiColor);
-
-            // ŠëŒ¯‚Èè‚ğœŠO
-            var safeActions = FilterDangerousActions(state, actions, progress);
-            if (safeActions.Count == 0)
+            // 1. è§’ã‚’å–ã‚‹æ‰‹ãŒã‚ã‚Œã°å„ªå…ˆ
+            foreach (var action in actions)
             {
-                safeActions = actions; // ‘S‚ÄŠëŒ¯‚È‚ç‚»‚Ì‚Ü‚Ü
+                if (IsCorner(action.Position, boardSize)) return action;
             }
 
-            // 80%‚ÌŠm—¦‚Å•]‰¿’lƒx[ƒXA20%‚Åƒ‰ƒ“ƒ_ƒ€i’Tõ‚Ìƒoƒ‰ƒ“ƒXj
-            if (random.NextDouble() < 0.8)
+            // 2. å®‰å…¨ãªæ‰‹ï¼ˆè‡ªæ»…ã—ãªã„æ‰‹ï¼‰ã«çµã‚‹
+            // ãƒ—ãƒ¬ã‚¤ã‚¢ã‚¦ãƒˆã®é€Ÿåº¦ã‚’è½ã¨ã•ãªã„ã‚ˆã†ã€IsActionBarelySafeã¯ä½¿ã‚ãšç°¡æ˜“ãƒã‚§ãƒƒã‚¯
+            var safeActions = new List<GameAction>(actions.Count);
+            foreach (var action in actions)
             {
-                GameAction bestAction = null;
-                double bestScore = isCurrentPlayerAI ? double.NegativeInfinity : double.PositiveInfinity;
+                // Reverseç³»ã®çŸ³ã¯ãƒ—ãƒ¬ã‚¤ã‚¢ã‚¦ãƒˆä¸­ã«ã¯ï¼ˆæ€è€ƒåœæ­¢ã§æ‰“ã¤ã¨ï¼‰å±é™ºãªã®ã§ã€
+                // ãƒ©ãƒ³ãƒ€ãƒ é¸æŠã®ç¢ºç‡ã‚’ä¸‹ã’ãŸã„ã€‚ã“ã“ã§ã¯ç°¡æ˜“çš„ã«é™¤å¤–ã›ãšãƒ©ãƒ³ãƒ€ãƒ ã«ä»»ã›ã‚‹ãŒã€
+                // æ˜ã‚‰ã‹ãªè‡ªæ»…ï¼ˆè‡ªåˆ†ã®è‰²ãŒå…¨æ»…ï¼‰ã ã‘ã¯é¿ã‘ãŸã„å ´åˆã€ã“ã“ã§ExecuteActionã—ã¦ãƒã‚§ãƒƒã‚¯ã™ã‚‹ã€‚
+                // ã—ã‹ã—ãã‚Œã¯é‡ã™ãã‚‹ãŸã‚ã€MCTSã®è©¦è¡Œå›æ•°ã§ã‚«ãƒãƒ¼ã™ã‚‹æ–¹é‡ã¨ã™ã‚‹ã€‚
+                safeActions.Add(action);
+            }
 
-                foreach (var action in safeActions)
-                {
-                    GameState nextState = ReversiSimulator.ExecuteAction(state, action);
-                    double score = ReversiEvaluator.Evaluate(nextState);
+            // ãƒ©ãƒ³ãƒ€ãƒ é¸æŠ
+            return safeActions[_random.Next(safeActions.Count)];
+        }
 
-                    // AI‹“_‚ÅƒXƒRƒA‚ğ’²®
-                    if (aiColor == StoneColor.White)
-                    {
-                        score = -score; // ”’‚Ìê‡‚Í”½“]
-                    }
+        private bool IsCorner(Position pos, int boardSize)
+        {
+            int r = pos.Row;
+            int c = pos.Col;
+            int offset = (GameState.MAX_BOARD_SIZE - boardSize) / 2;
+            int min = offset;
+            int max = offset + boardSize - 1;
+            return (r == min || r == max) && (c == min || c == max);
+        }
 
-                    bool isBetter = isCurrentPlayerAI ? (score > bestScore) : (score < bestScore);
-                    if (isBetter)
-                    {
-                        bestScore = score;
-                        bestAction = action;
-                    }
-                }
+        private double GetTerminalScore(GameState state, StoneColor aiColor)
+        {
+            int black = state.StoneCount[StoneColor.Black];
+            int white = state.StoneCount[StoneColor.White];
 
-                return bestAction ?? safeActions[random.Next(safeActions.Count)];
+            if (aiColor == StoneColor.Black)
+            {
+                if (black > white) return 1.0;
+                if (black < white) return 0.0;
+                return 0.5;
             }
             else
             {
-                return safeActions[random.Next(safeActions.Count)];
+                if (white > black) return 1.0;
+                if (white < black) return 0.0;
+                return 0.5;
             }
         }
 
-        /// <summary>
-        /// ŠëŒ¯‚Èè‚ğœŠO‚·‚é
-        /// </summary>
-        private List<GameAction> FilterDangerousActions(GameState state, List<GameAction> actions, double progress)
+        private double EvaluateNonTerminalState(GameState state, StoneColor aiColor)
         {
-            var safeActions = new List<GameAction>();
-            bool hasDelayReverseInStack = state.DelayReverseStack.Count > 0;
-            bool is10x10 = state.CurrentBoardSize == 10;
-
-            foreach (var action in actions)
-            {
-                bool isDangerous = false;
-
-                // ˜”Õiprogress < 0.25j‚Å‚ÌDelayReverse/Reverse‚ÍŠëŒ¯
-                if (progress < 0.25 && (action.Type == StoneType.DelayReverse || action.Type == StoneType.Reverse))
-                {
-                    isDangerous = true;
-                }
-
-                // Šù‚ÉDelayReverse‚ªƒXƒ^ƒbƒN‚É‚ ‚éê‡A’Ç‰Á‚ÍŠëŒ¯
-                if (hasDelayReverseInStack && action.Type == StoneType.DelayReverse)
-                {
-                    isDangerous = true;
-                }
-
-                // 10x10‚Å‘Šè‚ªExtend‚ğ‚Á‚Ä‚¢‚È‚¢ê‡Aæ‚ÉExtend‚ğg‚¤‚Ì‚Í•s—˜
-                if (is10x10 && action.Type == StoneType.Extend)
-                {
-                    StoneColor opponent = state.CurrentPlayer.Opponent();
-                    bool opponentHasExtend = state.Inventories[opponent].AvailableCount[StoneType.Extend] > 0;
-                    if (opponentHasExtend)
-                    {
-                        isDangerous = true;
-                    }
-                }
-
-                if (!isDangerous)
-                {
-                    safeActions.Add(action);
-                }
-            }
-
-            return safeActions;
-        }
-
-        /// <summary>
-        /// Backpropagation: Œ‹‰Ê‚ğe‚É“`”d
-        /// </summary>
-        private void Backpropagation(MCTSNode node, double result)
-        {
-            while (node != null)
-            {
-                node.Update(result);
-                result = 1.0 - result; // e‚Í‘ŠèƒvƒŒƒCƒ„[
-                node = node.Parent;
-            }
-        }
-
-        /// <summary>
-        /// I—¹ó‘Ô‚Ì•]‰¿
-        /// </summary>
-        private double EvaluateTerminalState(GameState state, StoneColor aiColor)
-        {
-            int blackStones = state.StoneCount[StoneColor.Black];
-            int whiteStones = state.StoneCount[StoneColor.White];
-
-            bool aiWins = (aiColor == StoneColor.Black && blackStones > whiteStones) ||
-                         (aiColor == StoneColor.White && whiteStones > blackStones);
-
-            if (aiWins) return 1.0;
-            if (blackStones == whiteStones) return 0.5;
-            return 0.0;
-        }
-
-        /// <summary>
-        /// ”ñI—¹ó‘Ô‚Ì•]‰¿
-        /// </summary>
-        private double EvaluateState(GameState state, StoneColor aiColor)
-        {
-            if (state.IsGameOver)
-            {
-                return EvaluateTerminalState(state, aiColor);
-            }
-
             double score = ReversiEvaluator.Evaluate(state);
-
-            // AI‹“_‚ÅƒXƒRƒA‚ğ’²®
-            if (aiColor == StoneColor.White)
-            {
-                score = -score;
-            }
-
-            // ƒXƒRƒA‚ğ0.0-1.0‚Ì”ÍˆÍ‚É³‹K‰»
-            return 0.5 + (Math.Tanh(score / 500.0) * 0.5);
-        }
-
-        /// <summary>
-        /// ƒQ[ƒ€is“x‚ğŒvZ
-        /// </summary>
-        private double CalculateProgress(GameState state)
-        {
-            int totalStones = state.StoneCount[StoneColor.Black] + state.StoneCount[StoneColor.White];
-            int maxStones = state.CurrentBoardSize * state.CurrentBoardSize;
-            return Math.Pow((double)totalStones / maxStones, 1.5);
+            if (aiColor == StoneColor.White) score = -score;
+            return 0.5 + 0.5 * Math.Tanh(score / 200.0);
         }
     }
 }
