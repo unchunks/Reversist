@@ -68,12 +68,18 @@ namespace App.Reversi.Core
             // 現在のUnityの盤面から、AIシミュレーター用のGameStateを構築
             GameState currentState = BuildCurrentGameState();
 
-            // MCTS実行（メインスレッドをブロックしないよう、別スレッドで実行）
-            MCTSSearchResult result = await UniTask.RunOnThreadPool(() =>
-            {
-                // MCTSに思考させる
-                return mctsAlgorithm.Search(currentState, _thinkingTimeMilliseconds);
-            }, cancellationToken: this.GetCancellationTokenOnDestroy()); // オブジェクト破棄時（AI思考中にゲームを終了したとき）にキャンセル可能にする
+            MCTSSearchResult result = await mctsAlgorithm.Search(
+                currentState,
+                _thinkingTimeMilliseconds
+            ).AttachExternalCancellation(this.GetCancellationTokenOnDestroy());
+
+            //// MCTS実行（メインスレッドをブロックしないよう、別スレッドで実行）
+            //// WebGLはマルチスレッド非対応なので上のコードに変更
+            //MCTSSearchResult result = await UniTask.RunOnThreadPool(() =>
+            //{
+            //    // MCTSに思考させる
+            //    return mctsAlgorithm.Search(currentState, _thinkingTimeMilliseconds);
+            //}, cancellationToken: this.GetCancellationTokenOnDestroy()); // オブジェクト破棄時（AI思考中にゲームを終了したとき）にキャンセル可能にする
 
             // ベンチマーク結果をログに出力
             UnityEngine.Debug.Log($"[MCTS Benchmark] Time: {result.ElapsedMilliseconds} ms");

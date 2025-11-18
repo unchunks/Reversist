@@ -1,3 +1,4 @@
+using Cysharp.Threading.Tasks;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -5,9 +6,9 @@ using System.Linq;
 
 namespace App.Reversi.AI
 {
-    // ============================================================================
-    // MCTSの検索結果を格納するクラス
-    // ============================================================================
+    /// <summary>
+    /// MCTSの検索結果を格納するクラス
+    /// </summary>
     public class MCTSSearchResult
     {
         public GameAction BestAction { get; }
@@ -24,9 +25,9 @@ namespace App.Reversi.AI
         }
     }
 
-    // ============================================================================
-    // MCTS（モンテカルロ木探索）メインクラス
-    // ============================================================================
+    /// <summary>
+    /// MCTS（モンテカルロ木探索）メインクラス
+    /// </summary>
     public class MCTS
     {
         private readonly Random _random;
@@ -40,13 +41,17 @@ namespace App.Reversi.AI
         /// <summary>
         /// MCTSで最善手を探索する
         /// </summary>
-        public MCTSSearchResult Search(GameState initialState, int milliseconds)
+        public async UniTask<MCTSSearchResult> Search(GameState initialState, int milliseconds)
         {
             UnityEngine.Debug.Log("[MCTS] Starting search for best move.");
             StoneColor aiColor = initialState.CurrentPlayer;
             Stopwatch sw = Stopwatch.StartNew();
 
-            // 1. AIのゲーム中「最初の1手」かを判定
+            // フレームレートを維持するための制御変数
+            long lastYieldTime = 0;
+            long yieldInterval = 10; // 10msごとに処理を中断して描画に譲る
+
+            // AIのゲーム中「最初の1手目」のときは、Frozenを打つ（AIの自滅防止用）
             bool isAIsFirstMove = false;
             if (aiColor == StoneColor.Black &&
                 initialState.StoneCount[StoneColor.Black] + initialState.StoneCount[StoneColor.White] == 4)
@@ -64,25 +69,25 @@ namespace App.Reversi.AI
             if (isAIsFirstMove)
             {
                 UnityEngine.Debug.Log("[MCTS Override] Checking for Frozen on first move.");
-                // 2. 有効な手をすべて取得
+                // 有効な手をすべて取得
                 var validActions = ReversiSimulator.GetValidActions(initialState);
 
-                // 3. 有効な手の中に Frozen があるか探す
+                // 有効な手の中に Frozen があるか探す
                 GameAction frozenAction = validActions.FirstOrDefault(action => action.Type == StoneType.Frozen);
 
                 if (frozenAction != null)
                 {
-                    // 4. あった場合、MCTS探索をスキップして即座に返す
+                    // あった場合、MCTS探索をスキップして即座に返す
                     sw.Stop();
                     UnityEngine.Debug.Log("[MCTS Override] Forcing first move: Frozen.");
                     return new MCTSSearchResult(frozenAction, 1, sw.ElapsedMilliseconds); // 1シミュレーションとして返す
                 }
-                // Frozen が使えない場合（在庫切れ、置ける場所がない等）、通常のMCTS探索にフォールスルー
+                // Frozen が使えない場合（在庫切れ、置ける場所がない等）、通常のMCTS探索へ
             }
 
             MCTSNode rootNode = new MCTSNode(initialState, aiColor);
 
-            // 合法手がない場合
+            // 打てる手がない場合
             if (rootNode.GetUntriedActionsCount() == 0 && rootNode.GetChildrenCount() == 0)
             {
                 sw.Stop();
@@ -94,19 +99,27 @@ namespace App.Reversi.AI
             // 時間制限まで探索を続ける
             while (sw.ElapsedMilliseconds < milliseconds)
             {
-                // 1. Selection（選択）: UCB1値が最大の子ノードを選択
+                // WebGL用の非同期中断処理
+                // 一定時間経過したら次のフレームへ処理を譲る
+                if (sw.ElapsedMilliseconds - lastYieldTime > yieldInterval)
+                {
+                    await UniTask.Yield();
+                    lastYieldTime = sw.ElapsedMilliseconds;
+                }
+
+                // Selection（選択）: UCB1値が最大の子ノードを選択
                 MCTSNode selectedNode = Selection(rootNode);
 
-                // 2. Expansion（展開）: 未試行の手があれば展開
+                // Expansion（展開）: 未試行の手があれば展開
                 if (selectedNode.HasUntriedActions() && !selectedNode.IsTerminal())
                 {
                     selectedNode = selectedNode.Expand(_random);
                 }
 
-                // 3. Simulation（シミュレーション）: ゲーム終了まで高速プレイアウト
+                // Simulation（シミュレーション）: ゲーム終了まで高速プレイアウト
                 double result = Simulation(selectedNode, aiColor, _random);
 
-                // 4. Backpropagation（逆伝播）: 結果を親ノードに伝播
+                // Backpropagation（逆伝播）: 結果を親ノードに伝播
                 Backpropagation(selectedNode, result);
 
                 simulationCount++;

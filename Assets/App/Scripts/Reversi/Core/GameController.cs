@@ -37,7 +37,7 @@ namespace App.Reversi.Core
 
         private GameMode _gameMode = ToReversiValues.GameMode;
         private StoneColor _aiColor = ToReversiValues.AiColor;
-        
+
         private bool _isGameOver;
         private StoneColor _currentPlayer;
         private Dictionary<StoneColor, StoneType> _currentSelectedType;
@@ -58,11 +58,11 @@ namespace App.Reversi.Core
             _boardInfoSubscriber.Subscribe(OnBoardUpdated);
             _selectedStoneTypeSubscriber.Subscribe(OnSelectedStoneTypeChanged);
 
-            // カメラ連動の登録
-            _board.OnBoardSizeChanged = async (size) =>
-            {
-                await _mainCam.transform.DOMoveY(size, 1).SetEase(Ease.OutBounce).ToUniTask();
-            };
+            // カメラ連動の登録（ユーザーが動かせるため現在はオフ）
+            //_board.OnBoardSizeChanged = async (size) =>
+            //{
+            //    await _mainCam.transform.DOMoveY(size, 1).SetEase(Ease.OutBounce).ToUniTask();
+            //};
 
             // AIの初期化を追加
             if (_gameMode == GameMode.PVE)
@@ -135,8 +135,8 @@ namespace App.Reversi.Core
             if (_isGameOver) return;
 
             // 石のアニメーション（特にExtend）とカメラワークが競合しないよう、
-            // 少し待機してからターンチェックを行う
-            await UniTask.DelayFrame(1);
+            // アニメーションが終わるまで待機してからターンチェックを行う
+            await UniTask.WaitUntil(() => DOTween.TotalPlayingTweens() == 0);
 
             CheckNextTurn();
         }

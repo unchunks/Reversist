@@ -156,8 +156,8 @@ namespace App.Reversi
                     CurrentBoardSize = Math.Min(CurrentBoardSize + 2, MAX_BOARD_SIZE);
                     float size = (float)(CurrentBoardSize * 0.1 + 0.004);
                     await UniTask.WhenAll(
-                        transform.DOScale(new Vector3(size, 1, size), 1).ToUniTask(),
-                        OnBoardSizeChanged.Invoke(CurrentBoardSize)
+                        transform.DOScale(new Vector3(size, 1, size), 1).ToUniTask()
+                    //OnBoardSizeChanged.Invoke(CurrentBoardSize) // ユーザーが動かせるため現在はオフ
                     );
                     break;
 

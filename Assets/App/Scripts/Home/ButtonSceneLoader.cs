@@ -12,6 +12,15 @@ namespace App.Home
 
         private string targetSceneName = "ReversiScene";
 
+        public void PVPOnClick()
+        {
+            // AIの思考時間を設定する
+            ToReversiValues.GameMode = GameMode.PVP;
+
+            // シーンを移動する
+            SceneManager.LoadScene(targetSceneName);
+        }
+
         public void PVEOnClick()
         {
             // AIの思考時間を設定する
