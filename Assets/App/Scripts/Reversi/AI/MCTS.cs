@@ -22,10 +22,17 @@ namespace App.Reversi.AI
         }
     }
 
+    /// <summary>
+    /// MCTS（モンテカルロ木探索）メインクラス
+    /// 修正版：石の性質（Reverse/DelayReverse）を考慮した厳格な自滅回避
+    /// </summary>
     public class MCTS
     {
         private readonly Random _random;
-        private const double EXPLORATION_CONSTANT = 1.41;
+        private const double EXPLORATION_CONSTANT = 1.414;
+
+        // 安全性チェックの深さ
+        private const int SAFETY_CHECK_DEPTH = 4;
 
         public MCTS()
         {
@@ -37,7 +44,7 @@ namespace App.Reversi.AI
             StoneColor aiColor = initialState.CurrentPlayer;
             Stopwatch sw = Stopwatch.StartNew();
 
-            // 思考時間に応じた深さ調整
+            // 思考時間に応じてシミュレーションの深さを調整
             int playoutDepth;
             if (milliseconds < 1000) playoutDepth = 5;
             else if (milliseconds < 2000) playoutDepth = 20;
@@ -49,7 +56,6 @@ namespace App.Reversi.AI
 
             MCTSNode rootNode = new MCTSNode(initialState, aiColor);
 
-            // 打てる手がない場合
             if (rootNode.GetUntriedActionsCount() == 0 && rootNode.GetChildrenCount() == 0)
             {
                 sw.Stop();
@@ -57,33 +63,30 @@ namespace App.Reversi.AI
             }
 
             int simulationCount = 0;
+            long searchTimeLimit = (long)(milliseconds * 0.9);
 
-            while (sw.ElapsedMilliseconds < milliseconds)
+            while (sw.ElapsedMilliseconds < searchTimeLimit)
             {
                 if (sw.ElapsedMilliseconds - lastYieldTime > yieldInterval)
                 {
                     await UniTask.Yield();
                     lastYieldTime = sw.ElapsedMilliseconds;
-                    if (sw.ElapsedMilliseconds >= milliseconds) break;
+                    if (sw.ElapsedMilliseconds >= searchTimeLimit) break;
                 }
 
-                // Selection
                 MCTSNode selectedNode = rootNode;
                 while (!selectedNode.IsLeaf() && !selectedNode.IsTerminal())
                 {
                     selectedNode = selectedNode.SelectBestChildUCB1(EXPLORATION_CONSTANT);
                 }
 
-                // Expansion
                 if (selectedNode.HasUntriedActions() && !selectedNode.IsTerminal())
                 {
                     selectedNode = selectedNode.Expand(_random);
                 }
 
-                // Simulation
                 double result = Simulation(selectedNode, aiColor, playoutDepth);
 
-                // Backpropagation
                 MCTSNode backNode = selectedNode;
                 while (backNode != null)
                 {
@@ -96,8 +99,8 @@ namespace App.Reversi.AI
 
             sw.Stop();
 
-            // 最も訪問回数が多い手を選ぶが、危険な手は回避する
-            GameAction bestAction = SelectSafeBestAction(rootNode, aiColor);
+            // 最終的な手の選択（厳格な安全性チェック）
+            GameAction bestAction = SelectTrulySafeAction(rootNode, aiColor);
 
             return new MCTSSearchResult(
                 bestAction,
@@ -107,179 +110,198 @@ namespace App.Reversi.AI
         }
 
         /// <summary>
-        /// 最善手を選択する（安全性チェック付き）
+        /// 安全性を最優先した行動選択
         /// </summary>
-        private GameAction SelectSafeBestAction(MCTSNode rootNode, StoneColor aiColor)
+        private GameAction SelectTrulySafeAction(MCTSNode rootNode, StoneColor aiColor)
         {
-            // 1. まずMCTSの結果（訪問回数順）から、安全な手を探す
-            if (rootNode.Children != null && rootNode.Children.Count > 0)
-            {
-                var sortedChildren = rootNode.Children
-                    .OrderByDescending(c => c.VisitCount)
-                    .ToList();
+            if (rootNode.Children == null || rootNode.Children.Count == 0) return null;
 
-                foreach (var child in sortedChildren)
+            // 1. まず、明らかに「自殺行為」である手を除外する
+            // DelayReverseやReverseで自分の石が0または1になる手は、論外として候補から外す
+            var validCandidates = new List<MCTSNode>();
+            foreach (var child in rootNode.Children)
+            {
+                if (!IsSuicidalMove(child.State, aiColor))
                 {
-                    if (IsActionSafe(rootNode.State, child.Action, aiColor))
-                    {
-                        return child.Action;
-                    }
+                    validCandidates.Add(child);
                 }
             }
 
-            // 2. 【緊急回避】MCTS候補がすべて危険（または空）だった場合
-            // 未探索の手も含めて、全ての有効手から「安全な手」をルールベースで探す
-            var allActions = ReversiSimulator.GetValidActions(rootNode.State);
-
-            // ランダムにシャッフルして偏りを防ぐ
-            allActions = allActions.OrderBy(a => _random.Next()).ToList();
-
-            foreach (var action in allActions)
+            // もしMCTSの候補がすべて自殺手だった場合（または候補がない場合）、
+            // 全ての合法手から「死なない手」を再検索する（緊急回避）
+            if (validCandidates.Count == 0)
             {
-                // Normal石を優先的にチェック（特殊石は自滅リスクが高いため後回し）
-                if (action.Type == StoneType.Normal)
+                var emergencyAction = FindAnySurvivalAction(rootNode.State, aiColor);
+                if (emergencyAction != null)
                 {
-                    if (IsActionSafe(rootNode.State, action, aiColor))
-                    {
-                        UnityEngine.Debug.LogWarning("[AI Safety] MCTS候補に安全な手がなく、緊急回避でNormal石を選択しました。");
-                        return action;
-                    }
+                    UnityEngine.Debug.LogWarning("[AI Safety] Emergency survival move selected.");
+                    return emergencyAction;
                 }
-            }
-
-            // Normalで安全な手がなければ、他の石もチェック
-            foreach (var action in allActions)
-            {
-                if (action.Type != StoneType.Normal)
-                {
-                    if (IsActionSafe(rootNode.State, action, aiColor))
-                    {
-                        UnityEngine.Debug.LogWarning($"[AI Safety] MCTS候補に安全な手がなく、緊急回避で{action.Type}を選択しました。");
-                        return action;
-                    }
-                }
-            }
-
-            // 3. どうあがいても安全な手がない場合（詰み）
-            // 訪問回数最大の手に特攻する
-            if (rootNode.Children != null && rootNode.Children.Count > 0)
-            {
+                // どうあがいても死ぬなら、訪問回数最大の手（MCTSの推奨）を返す
                 return rootNode.GetMostVisitedChild().Action;
             }
 
-            // ここに来ることはほぼない（有効手が0なら冒頭で弾かれる）
-            return allActions.FirstOrDefault();
+            // 2. 生き残る候補の中で、MCTSの訪問回数順にソート
+            var sortedCandidates = validCandidates.OrderByDescending(c => c.VisitCount).ToList();
+
+            // 3. 上位候補に対して、深い安全性チェック（相手の妙手で死なないか）を行う
+            foreach (var child in sortedCandidates)
+            {
+                // 既に自殺チェックは通過しているので、ここでは「相手の次の手」以降を深く読む
+                // 石数チェック用の基準値（現状維持できているか）
+                int currentStoneCount = rootNode.State.StoneCount[aiColor];
+
+                if (IsStateSafeDeep(child.State, aiColor, SAFETY_CHECK_DEPTH, currentStoneCount))
+                {
+                    return child.Action;
+                }
+            }
+
+            // 4. 安全な手が見つからない場合
+            // 「角を取られない」手の中で、最も石数が多い（生存確率が高い）手を選ぶ
+            var bestSurvival = sortedCandidates
+                .OrderByDescending(c => SurvivalScore(c, aiColor))
+                .First();
+
+            return bestSurvival.Action;
         }
 
         /// <summary>
-        /// その手が「安全」か厳密にチェックする
+        /// その手が「自殺行為」かどうかを判定する（浅いチェック）
         /// </summary>
-        private bool IsActionSafe(GameState currentState, GameAction action, StoneColor aiColor)
+        private bool IsSuicidalMove(GameState nextState, StoneColor aiColor)
         {
-            // 1. 自分の手でゲームが終わる場合（勝ちならOK）
-            GameState nextState = ReversiSimulator.ExecuteAction(currentState, action);
+            // 1. 打った直後に自分の石が0個（即死）
+            // DelayReverseを打った場合、相手の色として置くため、ここで0になりやすい
+            if (nextState.StoneCount[aiColor] == 0) return true;
 
-            if (nextState.IsGameOver)
+            // 2. 打った直後に自分の石が1個（瀕死）
+            // Reverseを打ったが、反転後に1個しか残らない場合など。
+            // 次の相手のターンでその1個を取られたら全滅（Wipeout）するので、ほぼ負け確定。
+            // ただし、打った時点でゲーム終了（自分が勝ち）ならOK
+            if (!nextState.IsGameOver && nextState.StoneCount[aiColor] <= 1) return true;
+
+            return false;
+        }
+
+        /// <summary>
+        /// 緊急回避：とにかく死なない手を探す
+        /// </summary>
+        private GameAction FindAnySurvivalAction(GameState currentState, StoneColor aiColor)
+        {
+            var allActions = ReversiSimulator.GetValidActions(currentState);
+            // Normal石を優先、特殊石は後回し（特殊石は事故りやすい）
+            var sortedActions = allActions.OrderBy(a => a.Type == StoneType.Normal ? 0 : 1).ToList();
+
+            foreach (var action in sortedActions)
             {
-                double score = GetTerminalScore(nextState, aiColor);
-                return score > 0.0; // 勝ち(1.0)か引き分け(0.5)ならOK
-            }
-
-            // 【自滅チェック】石の数が極端に少ない（全滅 or 1個残り）ならNG
-            // ReverseやDelayReverseを使った結果、自分の石が1個だけ残るケースは
-            // 次の相手のターンで取られて全滅するリスクが極大なので禁止する
-            int myStoneCount = nextState.StoneCount[aiColor];
-            if (myStoneCount <= 1)
-            {
-                return false;
-            }
-
-            // 2. 相手（敵）のターンでのシミュレーション
-            var opponentActions = ReversiSimulator.GetValidActions(nextState);
-            if (opponentActions.Count == 0) return true; // 相手が打てない（パス）なら安全
-
-            // 特殊石の場合は判定を厳しくする
-            bool isSpecialStone = (action.Type == StoneType.DelayReverse || action.Type == StoneType.Reverse);
-            double safetyThreshold = isSpecialStone ? 0.3 : 0.15;
-
-            foreach (var oppAction in opponentActions)
-            {
-                // A. 相手に角を取られる手があるか？ -> あれば危険
-                // （自分が角を取った直後なら許容するロジックも考えられるが、今回は厳しく禁止）
-                if (IsCorner(oppAction.Position, nextState.CurrentBoardSize))
+                GameState nextState = ReversiSimulator.ExecuteAction(currentState, action);
+                if (!IsSuicidalMove(nextState, aiColor))
                 {
-                    return false;
-                }
-
-                // B. 相手がその手を打った結果のチェック
-                GameState afterOpponentState = ReversiSimulator.ExecuteAction(nextState, oppAction);
-
-                // 【全滅チェック】相手に打たれて自分の石が0になるならNG
-                if (afterOpponentState.StoneCount[aiColor] == 0)
-                {
-                    return false;
-                }
-
-                // 【詰みチェック】
-                if (afterOpponentState.IsGameOver)
-                {
-                    double myScore = GetTerminalScore(afterOpponentState, aiColor);
-                    if (myScore == 0.0) return false; // 負け確定
-                }
-                else
-                {
-                    // 特殊石を使ったのに、その後圧倒的不利になるなら避ける
-                    if (isSpecialStone)
+                    // さらに、次の相手の一手で全滅させられないか簡易チェック
+                    if (CanSurviveNextTurn(nextState, aiColor))
                     {
-                        double currentEval = EvaluateNonTerminalState(afterOpponentState, aiColor);
-                        if (currentEval < safetyThreshold)
-                        {
-                            return false;
-                        }
+                        return action;
                     }
                 }
             }
-
-            return true;
+            return null;
         }
 
         /// <summary>
-        /// 最低限の安全性チェック（全滅と角取りだけ回避）
-        /// シミュレーションのプレイアウト中に使用
+        /// 相手の次の1手で全滅しないかチェック
         /// </summary>
-        private bool IsActionBarelySafe(GameState currentState, GameAction action, StoneColor aiColor)
+        private bool CanSurviveNextTurn(GameState state, StoneColor aiColor)
         {
-            GameState nextState = ReversiSimulator.ExecuteAction(currentState, action);
+            if (state.IsGameOver) return true;
+            var opponentActions = ReversiSimulator.GetValidActions(state);
+            if (opponentActions.Count == 0) return true;
 
-            // 自滅（1個以下）チェック
-            if (nextState.StoneCount[aiColor] <= 1) return false;
-
-            if (nextState.IsGameOver) return true;
-
-            // 相手の応手チェック（簡易版：最初に見つかった危険手だけで即NG）
-            var opponentActions = ReversiSimulator.GetValidActions(nextState);
             foreach (var oppAction in opponentActions)
             {
-                if (IsCorner(oppAction.Position, nextState.CurrentBoardSize)) return false;
+                // 相手が角を取れるなら危険とみなす（生存とは別だが、勝ち筋として）
+                if (IsCorner(oppAction.Position, state.CurrentBoardSize)) return false;
 
-                // 相手の手で全滅するか？（ここまでは重いのでプレイアウト中は見ない手もあるが、即死回避のため見る）
-                // ただしReversiSimulator.ExecuteActionは少し重いので、
-                // プレイアウト速度重視ならここはコメントアウトし、MCTSの学習に任せるという手もある。
-                // 今回は「弱すぎる」のを防ぐため入れる。
-                /*
-                GameState afterOpponentState = ReversiSimulator.ExecuteAction(nextState, oppAction);
-                if (afterOpponentState.StoneCount[aiColor] == 0) return false;
-                */
+                GameState afterState = ReversiSimulator.ExecuteAction(state, oppAction);
+                if (afterState.StoneCount[aiColor] == 0) return false; // 全滅させられる
             }
             return true;
+        }
+
+        private double SurvivalScore(MCTSNode node, StoneColor aiColor)
+        {
+            double score = node.VisitCount; // 基本は訪問回数
+
+            // 石が多いほうが生存しやすい
+            score += node.State.StoneCount[aiColor] * 100.0;
+
+            // DelayReverseはリスクとして減点
+            if (node.Action.Type == StoneType.DelayReverse) score -= 5000.0;
+
+            return score;
+        }
+
+        /// <summary>
+        /// 即死につながるかを深くチェック（枝刈り最適化版）
+        /// </summary>
+        private bool IsStateSafeDeep(GameState state, StoneColor myColor, int depth, int baselineCount)
+        {
+            // 基本的な敗北チェック
+            if (state.StoneCount[myColor] == 0) return false;
+            if (state.IsGameOver) return state.StoneCount[myColor] > 0; // 勝ってるか引き分けならOK
+            if (depth <= 0) return true;
+
+            var actions = ReversiSimulator.GetValidActions(state);
+
+            // パスの場合
+            if (actions.Count == 0)
+            {
+                GameState nextState = new GameState(state);
+                nextState.CurrentPlayer = nextState.CurrentPlayer.Opponent();
+                if (ReversiSimulator.GetValidActions(nextState).Count == 0)
+                {
+                    nextState.IsGameOver = true;
+                    return nextState.StoneCount[myColor] > 0;
+                }
+                return IsStateSafeDeep(nextState, myColor, depth - 1, baselineCount);
+            }
+
+            if (state.CurrentPlayer == myColor)
+            {
+                // 自分のターン：1つでも安全な手を選べればOK
+                foreach (var action in actions)
+                {
+                    GameState nextState = ReversiSimulator.ExecuteAction(state, action);
+                    // 自殺手は選ばない前提
+                    if (IsSuicidalMove(nextState, myColor)) continue;
+
+                    if (IsStateSafeDeep(nextState, myColor, depth - 1, baselineCount)) return true;
+                }
+                return false; // どの手を選んでも死ぬ（詰み）
+            }
+            else
+            {
+                // 相手のターン：相手が「最善手（私を殺す手）」を打ってきても耐えられるか？
+                foreach (var action in actions)
+                {
+                    // 1. 相手が角を取る手 -> 危険とみなす
+                    if (IsCorner(action.Position, state.CurrentBoardSize)) return false;
+
+                    GameState nextState = ReversiSimulator.ExecuteAction(state, action);
+
+                    // 2. 相手の手で全滅させられる -> NG
+                    if (nextState.StoneCount[myColor] == 0) return false;
+
+                    // 3. 再帰チェック
+                    if (!IsStateSafeDeep(nextState, myColor, depth - 1, baselineCount)) return false;
+                }
+                return true; // どの一手を打たれても耐えられる
+            }
         }
 
         private double Simulation(MCTSNode node, StoneColor aiColor, int maxDepth)
         {
-            if (node.IsTerminal())
-            {
-                return GetTerminalScore(node.State, aiColor);
-            }
+            if (node.IsTerminal()) return GetTerminalScore(node.State, aiColor);
 
             GameState simState = new GameState(node.State);
             int moves = 0;
@@ -301,43 +323,46 @@ namespace App.Reversi.AI
                 }
                 else
                 {
-                    // プレイアウト中の手選び
-                    GameAction selectedAction = SelectSimulationMove(simState, actions, boardSize);
+                    // 相手を全滅させる手があれば優先、なければ角、なければランダム
+                    GameAction selectedAction = SelectKillerMove(simState, actions);
                     simState = ReversiSimulator.ExecuteAction(simState, selectedAction);
                     moves++;
                 }
             }
 
-            if (simState.IsGameOver)
-            {
-                return GetTerminalScore(simState, aiColor);
-            }
-
+            if (simState.IsGameOver) return GetTerminalScore(simState, aiColor);
             return EvaluateNonTerminalState(simState, aiColor);
         }
 
-        private GameAction SelectSimulationMove(GameState state, List<GameAction> actions, int boardSize)
+        private GameAction SelectKillerMove(GameState state, List<GameAction> actions)
         {
-            // 1. 角を取る手があれば優先
+            StoneColor currentPlayer = state.CurrentPlayer;
+            StoneColor opponent = currentPlayer.Opponent();
+            int boardSize = state.CurrentBoardSize;
+
+            // 1. 相手を全滅させる手（即勝ち）
+            foreach (var action in actions)
+            {
+                GameState next = ReversiSimulator.ExecuteAction(state, action);
+                if (next.StoneCount[opponent] == 0) return action;
+            }
+
+            // 2. 角を取る手
             foreach (var action in actions)
             {
                 if (IsCorner(action.Position, boardSize)) return action;
             }
 
-            // 2. 安全な手（自滅しない手）に絞る
-            // プレイアウトの速度を落とさないよう、IsActionBarelySafeは使わず簡易チェック
-            var safeActions = new List<GameAction>(actions.Count);
-            foreach (var action in actions)
+            // 3. ランダム（ただしDelayReverseは避ける）
+            // DelayReverseはシミュレーション（ランダム打ち）においては自滅率が高すぎるため、
+            // プレイアウト中は確率的に選ばれないようにする
+            var safeActions = actions.Where(a => a.Type != StoneType.DelayReverse).ToList();
+            if (safeActions.Count > 0)
             {
-                // Reverse系の石はプレイアウト中には（思考停止で打つと）危険なので、
-                // ランダム選択の確率を下げたい。ここでは簡易的に除外せずランダムに任せるが、
-                // 明らかな自滅（自分の色が全滅）だけは避けたい場合、ここでExecuteActionしてチェックする。
-                // しかしそれは重すぎるため、MCTSの試行回数でカバーする方針とする。
-                safeActions.Add(action);
+                return safeActions[_random.Next(safeActions.Count)];
             }
 
-            // ランダム選択
-            return safeActions[_random.Next(safeActions.Count)];
+            return actions[_random.Next(actions.Count)];
         }
 
         private bool IsCorner(Position pos, int boardSize)
@@ -371,6 +396,9 @@ namespace App.Reversi.AI
 
         private double EvaluateNonTerminalState(GameState state, StoneColor aiColor)
         {
+            if (state.StoneCount[aiColor] == 0) return 0.0;
+            if (state.StoneCount[aiColor.Opponent()] == 0) return 1.0;
+
             double score = ReversiEvaluator.Evaluate(state);
             if (aiColor == StoneColor.White) score = -score;
             return 0.5 + 0.5 * Math.Tanh(score / 200.0);
