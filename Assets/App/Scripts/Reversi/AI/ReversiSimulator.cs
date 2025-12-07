@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace App.Reversi.AI
 {
     /// <summary>
-    /// Unity‚ÉˆË‘¶‚¹‚¸Aƒˆ‚ÈC#ƒƒWƒbƒN‚¾‚¯‚ÅƒQ[ƒ€‚ğ‚‘¬‚ÉƒVƒ~ƒ…ƒŒ[ƒg‚·‚é
+    /// Unityã«ä¾å­˜ã›ãšã€ç´”ç²‹ãªC#ãƒ­ã‚¸ãƒƒã‚¯ã ã‘ã§ã‚²ãƒ¼ãƒ ã‚’é«˜é€Ÿã«ã‚·ãƒŸãƒ¥ãƒ¬ãƒ¼ãƒˆã™ã‚‹
     /// </summary>
     public static class ReversiSimulator
     {
@@ -14,7 +14,7 @@ namespace App.Reversi.AI
             new Position(1, -1), new Position(1, 0), new Position(1, 1)
         };
 
-        // PositionƒIƒuƒWƒFƒNƒg‚Ì–‘OƒLƒƒƒbƒVƒ…
+        // Positionã‚ªãƒ–ã‚¸ã‚§ã‚¯ãƒˆã®äº‹å‰ã‚­ãƒ£ãƒƒã‚·ãƒ¥
         private static readonly Position[,] _positionCache;
 
         static ReversiSimulator()
@@ -111,8 +111,7 @@ namespace App.Reversi.AI
 
             ProcessSpecialStones(nextState, action);
 
-            // yC³z‘S–ÅiWipeoutj”»’è‚ğ’Ç‰Á
-            // ‚Ç‚¿‚ç‚©‚ÌÎ‚ª0‚É‚È‚Á‚½‚çA‘¦À‚ÉƒQ[ƒ€I—¹‚Æ‚·‚é
+            // ã©ã¡ã‚‰ã‹ã®çŸ³ãŒ0ã«ãªã£ãŸã‚‰ã€å³åº§ã«ã‚²ãƒ¼ãƒ çµ‚äº†ã¨ã™ã‚‹
             if (nextState.StoneCount[StoneColor.Black] == 0 || nextState.StoneCount[StoneColor.White] == 0)
             {
                 nextState.IsGameOver = true;
