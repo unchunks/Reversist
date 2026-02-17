@@ -44,8 +44,8 @@ public class GameUIView : MonoBehaviour
 
     [Header("Result Text Color Settings (For Colored Background)")]
     // リザルト背景（マゼンタ/シアン）の上で見やすい色
-    [SerializeField] private Color _blackWinTextColor = Color.white; // マゼンタ背景には白文字
-    [SerializeField] private Color _whiteWinTextColor = new Color(0.1f, 0.1f, 0.1f); // シアン背景には黒文字
+    [SerializeField] private Color _blackWinTextColor = Color.white;
+    [SerializeField] private Color _whiteWinTextColor = Color.white;
 
     [SerializeField] private Color _inactiveColor = Color.gray;
 
@@ -155,7 +155,7 @@ public class GameUIView : MonoBehaviour
             winnerColor = _whiteWinTextColor;
             targetMaterial = _whiteWinMaterial;
             _winnerIcon.sprite = _whiteIcon;
-            _winnerIcon.color = _blackTeamColor;
+            _winnerIcon.color = _whiteTeamColor;
         }
         else
         {
@@ -180,10 +180,11 @@ public class GameUIView : MonoBehaviour
         _resultWindowRect.localScale = new Vector3(0f, 0.02f, 1f);
         if (_resultContentGroup != null) _resultContentGroup.alpha = 0f;
 
-        // ★追加: 結果BGM
+        // 結果BGM
         var bgmType = (winnerString == "DRAW GAME") ? GameAudioManager.BgmType.Lose : GameAudioManager.BgmType.Win;
+        GameAudioManager.Instance.PlayBGM(bgmType);
 
-        // Step 1: Background & Line
+        // 線が左から右へ伸びる演出
         float duration = 0.3f;
         float time = 0;
 
@@ -202,7 +203,7 @@ public class GameUIView : MonoBehaviour
 
         await UniTask.Delay(50);
 
-        // Step 2: Open Window
+        // ウィンドウを開く演出
         time = 0;
         duration = 0.4f;
         while (time < duration)
@@ -216,7 +217,7 @@ public class GameUIView : MonoBehaviour
         }
         _resultWindowRect.localScale = Vector3.one;
 
-        // Step 3: Content & Score
+        // スコアをカウントアップで表示する演出
         if (_resultContentGroup != null)
         {
             time = 0;
@@ -248,7 +249,7 @@ public class GameUIView : MonoBehaviour
         }
     }
 
-    // --- Thinking UI Control ---
+    #region Thinking UI Control
 
     public void ShowThinking(bool show)
     {
@@ -275,7 +276,7 @@ public class GameUIView : MonoBehaviour
     {
         if (_thinkingText == null) return;
 
-        string baseText = "SYSTEM ANALYZING...";
+        string baseText = "AI THINKING...";
         int length = 0;
 
         try
@@ -298,4 +299,6 @@ public class GameUIView : MonoBehaviour
             // キャンセル時は何もしない
         }
     }
+
+    #endregion
 }

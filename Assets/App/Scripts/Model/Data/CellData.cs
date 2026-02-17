@@ -3,6 +3,6 @@ public struct CellData
 {
     public StoneColor Color;
     public StoneType Type;
-    public bool IsFixed;
+    public bool IsFixed => Type == StoneType.Fixed;
     public bool IsEmpty => Color == StoneColor.None;
 }

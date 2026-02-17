@@ -1,8 +1,6 @@
-// ---------------------------------------------------------
-// DATA: Game Configuration
-// タイトル画面からゲーム画面へ設定を渡すためのコンテナ
-// ---------------------------------------------------------
-
+/// <summary>
+/// タイトル画面からゲーム画面へ設定を渡すためのコンテナ
+/// </summary>
 public static class GameSettings
 {
     public enum GameMode
@@ -15,7 +13,7 @@ public static class GameSettings
     {
         Black,  // 先攻
         White,  // 後攻
-        Random  // ランダム
+        Random
     }
 
     public static GameMode Mode = GameMode.PvP;

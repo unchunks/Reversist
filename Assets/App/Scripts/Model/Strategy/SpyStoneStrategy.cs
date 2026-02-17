@@ -3,14 +3,15 @@ using System.Collections.Generic;
 public class SpyStoneStrategy : StoneStrategy
 {
     public override StoneColor GetAttackColor(StoneColor myColor)
-    {
-        // 判定時は相手の色として振る舞う
-        return (myColor == StoneColor.Black) ? StoneColor.White : StoneColor.Black;
-    }
+        => (myColor == StoneColor.Black) ? StoneColor.White : StoneColor.Black;
 
-    public override void OnAfterPlacement(BoardState board, PlayerMove move, List<Position> flippedStones, MoveResult result)
+    public override void OnAfterPlacement(BoardState board, PlayerMove move, List<Position> flippedStones, MoveResult outResult)
     {
+        // 判定は相手の色で行うが、効果で元に戻る
         board.SetCell(move.Pos.x, move.Pos.y, move.PlayerColor, move.Type);
-        result.Effects.Add(new EffectEvent { Type = StoneType.Spy, Origin = move.Pos });
+
+        if (outResult == null) return;
+        outResult.Effect.Type = StoneType.Spy;
+        outResult.Effect.Origin = move.Pos;
     }
 }

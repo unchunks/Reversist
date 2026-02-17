@@ -1,7 +1,4 @@
 using Cysharp.Threading.Tasks;
-using NUnit.Framework;
-using System.Collections.Generic;
-using System.Diagnostics;
 using System.Threading;
 
 public class CPUPlayer : IPlayer
@@ -15,36 +12,42 @@ public class CPUPlayer : IPlayer
 
     public async UniTask<PlayerMove> DecideMoveAsync(BoardState board, StoneColor playerColor, StoneInventory inventory, CancellationToken token)
     {
-        // 思考演出ウェイト (0.5秒)
+        // 思考演出
         await UniTask.Delay(500, cancellationToken: token);
 
 
         // 盤面のコピー
         BoardState threadSafeBoard = new BoardState(board);
 
-        // AI思考実行
         PlayerMove bestMove = PlayerMove.Invalid;
 
-        // WebGLではスレッドプールが使えないため、メインスレッドで実行する
-        // ただし、計算が重すぎるとブラウザがフリーズするため、WebGL時は探索深さを下げるなどの調整が推奨される
-
+        // AI思考実行
 #if UNITY_WEBGL
         // --- WebGL環境 ---
-        // スレッド切り替えを行わず、メインスレッドで実行する。
+        // WebGLではスレッドプールが使えないため、メインスレッドで実行する
         // UIのフリーズを防ぐため、1フレームだけ待って描画を更新させてから計算に入る
         await UniTask.Yield(token);
-
-        bestMove = _ai.CalculateNextMove(threadSafeBoard, playerColor, inventory);
+        bestMove = _ai.CalculateNextMove(threadSafeBoard, playerColor, inventory, CancellationToken.None);
 #else
         // --- スタンドアロン/モバイル環境 ---
-        // バックグラウンドスレッドへ移動
-        await UniTask.SwitchToThreadPool();
-
-        // 重い計算
-        bestMove = _ai.CalculateNextMove(threadSafeBoard, color, inventory);
-
-        // メインスレッドへ戻る
-        await UniTask.SwitchToMainThread(token);
+        try
+        {
+            return await UniTask.RunOnThreadPool(() => 
+            {                
+                if (_ai is ICancellableAI cancellableAI)
+                {
+                    return cancellableAI.CalculateNextMove(threadSafeBoard, playerColor, inventory, token);
+                }
+                else
+                {
+                    return _ai.CalculateNextMove(threadSafeBoard, playerColor, inventory);
+                }
+            }, cancellationToken: token);
+        }
+        catch (System.OperationCanceledException)
+        {
+            throw;
+        }
 #endif
 
         return bestMove;

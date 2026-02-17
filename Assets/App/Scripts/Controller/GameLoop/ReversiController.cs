@@ -1,6 +1,7 @@
 ﻿using Cysharp.Threading.Tasks;
 using System;
 using System.Threading;
+using Unity.VisualScripting.Antlr3.Runtime;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -16,7 +17,9 @@ public class ReversiController : MonoBehaviour
 
     private BoardState _board;
     private StoneColor _currentPlayerColor;
-    private CancellationTokenSource _cts;
+
+    // ゲームループ全体のキャンセルを管理
+    private CancellationTokenSource _gameLoopCts;
 
     private IPlayer _playerBlack;
     private IPlayer _playerWhite;
@@ -24,56 +27,41 @@ public class ReversiController : MonoBehaviour
     private StoneInventory _blackInventory;
     private StoneInventory _whiteInventory;
 
+    // 二重遷移防止フラグ
+    private bool _isTransitioning = false;
+
     void Start()
     {
-        _cts = new CancellationTokenSource();
-
-        // 初期化と同時にフェードインを開始
+        _gameLoopCts = new CancellationTokenSource();
         InitializeGame();
 
-        // パネルを最前面にしてフェードイン開始
-        if (_fadePanel != null)
-        {
-            _fadePanel.transform.SetAsLastSibling();
-            _fadePanel.alpha = 1f; // 最初は真っ暗
-            _fadePanel.blocksRaycasts = true; // 操作ブロック
-            FadeInAsync().Forget();
-        }
-
-        GameLoop(_cts.Token).Forget();
-    }
-
-    private async UniTaskVoid FadeInAsync()
-    {
-        if (_fadePanel == null) return;
-
-        await UniTask.Delay(500); // 少し待ってから開ける（演出）
-
-        float duration = 1.0f;
-        float time = 0;
-
-        while (time < duration)
-        {
-            time += Time.deltaTime;
-            _fadePanel.alpha = 1f - (time / duration); // 1 -> 0
-            await UniTask.Yield();
-        }
-
-        _fadePanel.alpha = 0f;
-        _fadePanel.blocksRaycasts = false; // 操作解禁
+        // フェードインとゲームループを並行して開始
+        FadePanelAsync(1f, 0f, _gameLoopCts.Token).Forget();
+        GameLoopAsync(_gameLoopCts.Token).Forget();
     }
 
     private void OnDestroy()
     {
-        _cts?.Cancel();
-        _cts?.Dispose();
+        // ReturnToTitleAsyncで呼び出されるが、念のためここでもキャンセルしておく
+        CancelGameLoop();
+    }
+
+    private void CancelGameLoop()
+    {
+        // 
+        if (_gameLoopCts != null && !_gameLoopCts.IsCancellationRequested)
+        {
+            _gameLoopCts.Cancel();
+            _gameLoopCts.Dispose();
+            _gameLoopCts = null;
+        }
     }
 
     private void InitializeGame()
     {
-        // BGM切り替え（クロスフェード）
+        // BGM切り替え
         GameAudioManager.Instance.PlayBGM(GameAudioManager.BgmType.MainGame);
-        GameAudioManager.Instance.PlayGameStart(); // 開始SE
+        GameAudioManager.Instance.PlayGameStart();
 
         _board = new BoardState();
         _view.Initialize(_board);
@@ -84,23 +72,20 @@ public class ReversiController : MonoBehaviour
         // プレイヤー設定の読み込み
         if (GameSettings.Mode == GameSettings.GameMode.PvP)
         {
-            // PvP: 両方Human
             _playerBlack = new HumanPlayer(_view, _selectorUI);
             _playerWhite = new HumanPlayer(_view, _selectorUI);
 
             // UI初期化 (黒番開始なので黒インベントリ)
             _selectorUI.Initialize(_blackInventory);
         }
-        else
+        else // PvE
         {
-            // PvE: 設定に応じて割り振り
             GameSettings.PlayerSide playerSide = GameSettings.Side;
 
             // Randomならここで決定
             if (playerSide == GameSettings.PlayerSide.Random)
             {
                 playerSide = (UnityEngine.Random.Range(0, 2) == 0) ? GameSettings.PlayerSide.Black : GameSettings.PlayerSide.White;
-                Debug.Log($"Random Side Selected: Player is {playerSide}");
             }
 
             int depth = GameSettings.AiDifficulty;
@@ -112,8 +97,6 @@ public class ReversiController : MonoBehaviour
                 // プレイヤーが黒（先攻）
                 _playerBlack = human;
                 _playerWhite = cpu;
-
-                // UIはプレイヤー用（黒）で初期化
                 _selectorUI.Initialize(_blackInventory);
             }
             else
@@ -121,13 +104,6 @@ public class ReversiController : MonoBehaviour
                 // プレイヤーが白（後攻）
                 _playerBlack = cpu;
                 _playerWhite = human;
-
-                // UIはプレイヤー用（白）のインベントリを表示すべきだが、
-                // ゲーム開始時は必ず「黒番」から始まるため、
-                // GameLoopの冒頭で _selectorUI.SwitchInventory(_blackInventory) が呼ばれてしまう。
-                // したがって、ここではどちらで初期化しても一瞬で上書きされるが、
-                // 「自分の持ち物」を確認できるように白で初期化しておくのが親切か。
-                // ただし、CPUターン中はUIロックがかかるので、結局操作はできない。
                 _selectorUI.Initialize(_whiteInventory);
             }
         }
@@ -135,42 +111,65 @@ public class ReversiController : MonoBehaviour
         // リザルト画面の「タイトルへ」ボタンに機能を登録
         if (_ui != null && _ui.BackToTitleButton != null)
         {
-            _ui.BackToTitleButton.onClick.RemoveAllListeners(); // 重複防止
+            _ui.BackToTitleButton.onClick.RemoveAllListeners(); // ゲーム2回目以降の重複防止
             _ui.BackToTitleButton.onClick.AddListener(() => ReturnToTitleAsync().Forget());
         }
 
-        UpdateGameUI();
+        UpdateScoreUI();
     }
 
-    /// <summary>
-    /// タイトルへ戻る処理（フェードアウト付き）
-    /// </summary>
-    private async UniTaskVoid ReturnToTitleAsync()
+    private async UniTaskVoid FadePanelAsync(float startAlpha, float endAlpha, CancellationToken token, float duration = 1f)
     {
-        // 二重押し防止
-        if (_fadePanel != null && _fadePanel.blocksRaycasts) return;
+        if (_fadePanel == null) return;
 
-        Debug.Log("Returning to Title...");
-
-        // フェードアウト
-        if (_fadePanel != null)
+        try
         {
-            _fadePanel.transform.SetAsLastSibling(); // 最前面へ
-            _fadePanel.blocksRaycasts = true; // 入力ブロック
+            _fadePanel.transform.SetAsLastSibling();
+            _fadePanel.blocksRaycasts = true;
+            _fadePanel.alpha = startAlpha;
 
-            float duration = 1.0f;
+            await UniTask.Delay(100, cancellationToken: token); // 少し待ってから開ける
+
             float time = 0;
 
             while (time < duration)
             {
+                if (_fadePanel == null) return;
+
                 time += Time.deltaTime;
-                _fadePanel.alpha = time / duration; // 0 -> 1
+                _fadePanel.alpha = Mathf.Lerp(startAlpha, endAlpha, time / duration);
                 await UniTask.Yield();
             }
-            _fadePanel.alpha = 1f;
         }
+        catch (OperationCanceledException)
+        {
+            // キャンセルされた場合は正常な動作なのでログを出さずに終了
+            return;
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"FadeAsync error: {e.Message}");
+        }
+        finally
+        {
+            if (_fadePanel != null)
+            {
+                _fadePanel.alpha = endAlpha;
+                _fadePanel.blocksRaycasts = false; // ここから操作解禁
+            }
+        }
+    }
 
-        // シーンロード
+    private async UniTaskVoid ReturnToTitleAsync()
+    {
+        if (_isTransitioning) return; // 二重遷移防止
+        _isTransitioning = true;
+
+        CancelGameLoop();
+
+        // フェードアウト
+        FadePanelAsync(0f, 1f, CancellationToken.None).Forget();
+
         try
         {
             await SceneManager.LoadSceneAsync(_titleSceneName);
@@ -181,164 +180,145 @@ public class ReversiController : MonoBehaviour
         }
     }
 
-    private async UniTaskVoid GameLoop(CancellationToken token)
+    private async UniTaskVoid GameLoopAsync(CancellationToken token)
     {
         _currentPlayerColor = StoneColor.Black;
+        if (_ui != null) _ui.UpdateTurn(_currentPlayerColor);
         int consecutivePasses = 0;
-
-        StoneInventory activeInventory = _blackInventory;
-        _selectorUI.SwitchInventory(activeInventory);
-        UpdateTurnState();
-        UpdateGameUI();
 
         try
         {
-            while (true)
+
+            while (!token.IsCancellationRequested)
             {
-                activeInventory = (_currentPlayerColor == StoneColor.Black) ? _blackInventory : _whiteInventory;
+                StoneInventory activeInventory = (_currentPlayerColor == StoneColor.Black) ? _blackInventory : _whiteInventory;
+                _selectorUI.SwitchInventory(activeInventory);
+                UpdateTurnState();
 
-                bool hasMove = ReversiRules.HasValidMove(_board, _currentPlayerColor, activeInventory);
-
-                if (!hasMove)
+                // パス判定
+                if (!ReversiRules.HasValidMove(_board, _currentPlayerColor, activeInventory))
                 {
-                    Debug.Log($"{_currentPlayerColor} has no moves! PASS.");
-                    if (_ui != null) _ui.ShowThinking(false);
-
-                    if (_ui != null) await _ui.ShowPassNotice(_currentPlayerColor);
+                    GameAudioManager.Instance.PlayPass();
 
                     consecutivePasses++;
-
-                    if (consecutivePasses >= 2)
+                    if (_ui != null)
                     {
-                        Debug.Log("Both players passed. Game Over.");
-                        break;
+                        _ui.ShowThinking(false);
+                        await _ui.ShowPassNotice(_currentPlayerColor);
                     }
 
-                    _currentPlayerColor = (_currentPlayerColor == StoneColor.Black) ? StoneColor.White : StoneColor.Black;
-                    if (_ui != null) _ui.UpdateTurn(_currentPlayerColor);
+                    if (consecutivePasses >= 2) break;
 
-                    await UniTask.Yield(PlayerLoopTiming.Update, token);
+                    SwitchTurn();
                     continue;
                 }
 
                 consecutivePasses = 0;
 
-                _selectorUI.SwitchInventory(activeInventory);
-                UpdateTurnState();
-
                 IPlayer activePlayer = (_currentPlayerColor == StoneColor.Black) ? _playerBlack : _playerWhite;
-
-                // 相手がCPUの場合、思考中UIを表示
-                // (IsHuman判定はUpdateTurnStateでも使っているので、もっと綺麗に共通化できるが、ここでは型チェックを行う)
                 bool isCpuTurn = !(activePlayer is HumanPlayer);
 
-                if (isCpuTurn && _ui != null)
-                {
-                    _ui.ShowThinking(true);
-                }
+                if (isCpuTurn && _ui != null) _ui.ShowThinking(true);
 
                 // 思考・入力待機
+                // キャンセルトークンを渡すことで、ReturnToTitleが呼ばれたら即座に例外を発生させられる
                 PlayerMove move = await activePlayer.DecideMoveAsync(_board, _currentPlayerColor, activeInventory, token);
 
-                // 思考終了でUIを消す
-                if (isCpuTurn && _ui != null)
-                {
-                    _ui.ShowThinking(false);
-                }
+                if (isCpuTurn && _ui != null) _ui.ShowThinking(false);
 
+                // ロジックの適用
                 if (ReversiRules.IsValidMove(_board, move))
                 {
-                    // 戻り値(MoveResult)を受け取る
+                    // データ上の盤面更新
                     MoveResult result = ReversiRules.ApplyMove(_board, move);
 
-                    // アニメーション付きで更新し、完了を待つ
-                    // UpdateBoardではなくAnimateMoveResultAsyncを呼ぶ
-                    await _view.AnimateMoveResultAsync(_board, result);
-
-                    UpdateGameUI();
-
+                    // データ上のインベントリ消費 (アニメーションを待たずに即座に減らす)
                     if (activePlayer is CPUPlayer)
                     {
                         activeInventory.LastSelected = move.Type;
                     }
                     _selectorUI.ConsumeCurrentSelection();
+
+                    // 画面の演出を待機
+                    await _view.AnimateMoveResultAsync(_board, result, token);
+
+                    UpdateScoreUI();
                 }
                 else
                 {
-                    Debug.LogWarning("Invalid Move! Force Retry or Pass logic here.");
-                    continue;
+                    GameAudioManager.Instance.PlayInvalid();
+                    continue; // やり直し
                 }
 
-                _currentPlayerColor = (_currentPlayerColor == StoneColor.Black) ? StoneColor.White : StoneColor.Black;
-                if (_ui != null) _ui.UpdateTurn(_currentPlayerColor);
-
-                await UniTask.Yield(PlayerLoopTiming.Update, token);
+                SwitchTurn();
             }
 
-            await ShowResult(token);
+            // ゲーム終了
+            if (!token.IsCancellationRequested)
+            {
+                await ShowResultAsync(token);
+            }
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException)
+        {
+            Debug.Log("タイトルに戻るなどの理由で、ゲームループがキャンセルされました");
+        }
+    }
+
+    private void SwitchTurn()
+    {
+        _currentPlayerColor = _currentPlayerColor.GetOpposite();
+        if (_ui != null) _ui.UpdateTurn(_currentPlayerColor);
     }
 
     private void UpdateTurnState()
     {
         IPlayer activePlayer = (_currentPlayerColor == StoneColor.Black) ? _playerBlack : _playerWhite;
-        if (activePlayer is HumanPlayer) _selectorUI.SetInteractable(true);
-        else _selectorUI.SetInteractable(false);
+        _selectorUI.SetInteractable(activePlayer is HumanPlayer);
     }
 
-    private void UpdateGameUI()
+    private void UpdateScoreUI()
     {
         if (_ui == null) return;
-        _ui.UpdateTurn(_currentPlayerColor);
-
-        int black = 0;
-        int white = 0;
+        int black = 0, white = 0;
         CountStones(out black, out white);
         _ui.UpdateScore(black, white);
     }
 
     private void CountStones(out int black, out int white)
     {
-        black = 0;
-        white = 0;
+        black = white = 0;
         for (int y = 0; y < _board.Height; y++)
         {
             for (int x = 0; x < _board.Width; x++)
             {
-                var cell = _board.GetCell(x, y);
-                if (cell.Color == StoneColor.Black) black++;
-                else if (cell.Color == StoneColor.White) white++;
+                var color = _board.GetCell(x, y).Color;
+                if (color == StoneColor.Black) black++;
+                else if (color == StoneColor.White) white++;
             }
         }
     }
 
-    private async UniTask ShowResult(CancellationToken token)
+    private async UniTask ShowResultAsync(CancellationToken token)
     {
-        // --- ゲーム終了処理 ---
-        Debug.Log("Starting Game Over Sequence...");
-
-        // 最終集計
         int black = 0, white = 0;
         CountStones(out black, out white);
 
         // 最後の石が置かれて、一瞬の間を作る
         await UniTask.Delay(1000, cancellationToken: token);
 
-        // アニメーション付きリザルト表示
         if (_ui != null)
         {
             await _ui.ShowResultAsync(black, white);
         }
     }
 
-    #region Debug Button
+    #region Debug
 
-    // これをインスペクターの Button OnClick に登録する
     public void DebugButton()
     {
-        CancellationToken token = _cts.Token;
-        ShowResult(token).Forget();
+        CancellationToken token = _gameLoopCts.Token;
+        ShowResultAsync(token).Forget();
     }
 
     #endregion

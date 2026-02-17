@@ -5,45 +5,53 @@ using System.Collections.Generic;
 public class StoneInventory
 {
     // 各石の所持数（-1 なら無限）
-    public Dictionary<StoneType, int> Stock = new Dictionary<StoneType, int>();
+    public int[] Stock = new int[(int)StoneType.Size];
 
     public StoneType LastSelected = StoneType.Normal;
 
     public StoneInventory()
     {
-        // デフォルトの所持数設定 (バランス調整はここで行う)
-        Stock[StoneType.Normal] = -1; // 無限
-        Stock[StoneType.Expander] = 1;
-        Stock[StoneType.Bomb] = 1;
-        Stock[StoneType.Phantom] = 3;
-        Stock[StoneType.Spy] = 1;
-        Stock[StoneType.Fixed] = 2;
+        // デフォルトの所持数設定
+        Stock[(int)StoneType.Normal] = -1; // 無限
+        Stock[(int)StoneType.Expander] = 1;
+        Stock[(int)StoneType.Bomb] = 1;
+        Stock[(int)StoneType.Phantom] = 3;
+        Stock[(int)StoneType.Spy] = 1;
+        Stock[(int)StoneType.Fixed] = 2;
+    }
+
+    public void CopyTo(StoneInventory dst)
+    {
+        Array.Copy(this.Stock, dst.Stock, this.Stock.Length);
+        dst.LastSelected = this.LastSelected;
     }
 
     public bool CanUse(StoneType type)
     {
-        if (!Stock.ContainsKey(type)) return false;
-        return Stock[type] == -1 || Stock[type] > 0;
+        int count = Stock[(int)type];
+        return count == -1 || count > 0;
     }
 
     public void Use(StoneType type)
     {
-        if (Stock.ContainsKey(type) && Stock[type] > 0)
+        int index = (int)type;
+        if (Stock[index] > 0)
         {
-            Stock[type]--;
+            Stock[index]--;
         }
     }
 
-    public List<StoneType> GetAvailableStoneTypes()
+    // AI用：アロケーションを避けるため、既存のバッファ(Listや配列)に詰め込むメソッドを追加
+    public int GetAvailableStoneTypesNonAlloc(Span<StoneType> buffer)
     {
-        List<StoneType> availableTypes = new List<StoneType>();
-        foreach (var kvp in Stock)
+        int count = 0;
+        for (int i = 0; i < (int)StoneType.Size; i++)
         {
-            if (CanUse(kvp.Key))
+            if (Stock[i] == -1 || Stock[i] > 0)
             {
-                availableTypes.Add(kvp.Key);
+                buffer[count++] = (StoneType)i;
             }
         }
-        return availableTypes;
+        return count; // 有効な種類数を返す
     }
 }

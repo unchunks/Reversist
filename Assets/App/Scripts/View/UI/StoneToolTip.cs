@@ -11,85 +11,80 @@ public class StoneTooltip : MonoBehaviour
     [SerializeField] private RectTransform _backgroundRect;
 
     [Header("Settings")]
-    [SerializeField] private float _offsetX = 700f; // ボタンの基準位置（Left）からのオフセット
-    [SerializeField] private float _padding = 10f; // 画面端からの余白
+    [SerializeField] private float _padding = 10f; // 画面端からの最小余白
+    [SerializeField] private float _offsetFromButton = 20f; // ボタンから離す距離
 
     private CanvasGroup _canvasGroup;
+    private RectTransform _rectTransform;
+    private Canvas _parentCanvas;
 
     private void Awake()
     {
         _canvasGroup = GetComponent<CanvasGroup>();
+        _rectTransform = GetComponent<RectTransform>();
+        _parentCanvas = GetComponentInParent<Canvas>();
 
-        // 初期化時にレイキャストを無効化する
         _canvasGroup.blocksRaycasts = false;
         _canvasGroup.interactable = false;
 
         Hide();
     }
 
-    public void Show(string title, string description, Vector3 targetWorldPos, Color themeColor)
+    public void Show(StoneData data, RectTransform targetButtonRect)
     {
-        _titleText.text = title;
-        _titleText.color = themeColor;
-        _descriptionText.text = description;
+        _titleText.text = data.Title;
+        _titleText.color = data.ThemeColor;
+        _descriptionText.text = data.Description;
 
-        // まずターゲット基準の理想位置に配置
-        transform.position = targetWorldPos + Vector3.right * _offsetX;
-
-        // コンテンツの内容量に合わせてサイズを確定させる（これがないと計算がズレる）
+        // テキスト更新直後の矩形サイズ
         LayoutRebuilder.ForceRebuildLayoutImmediate(_backgroundRect);
 
-        // 画面内に収まるように位置補正
-        KeepInScreen();
+        // ボタンの四隅のワールド座標を取得
+        Vector3[] buttonCorners = new Vector3[4];
+        targetButtonRect.GetWorldCorners(buttonCorners);
 
-        _canvasGroup.alpha = 1f;
-        _canvasGroup.blocksRaycasts = false;
-    }
-
-    private void KeepInScreen()
-    {
-        // 自身の四隅のワールド座標を取得
         // corners[0]=左下, [1]=左上, [2]=右上, [3]=右下
-        Vector3[] corners = new Vector3[4];
-        _backgroundRect.GetWorldCorners(corners);
+        Vector3 buttonRightCenter = (buttonCorners[2] + buttonCorners[3]) / 2f;
+        Vector3 buttonLeftCenter = (buttonCorners[0] + buttonCorners[1]) / 2f;
 
+        // 基本はボタンの「右側」に配置する
+        _rectTransform.pivot = new Vector2(0f, 0.5f);
+        _rectTransform.position = buttonRightCenter + new Vector3(_offsetFromButton, 0, 0);
+
+        // 画面右端からはみ出すかのチェック
+        Vector3[] tooltipCorners = new Vector3[4];
+        _backgroundRect.GetWorldCorners(tooltipCorners);
         Rect screenRect = Screen.safeArea;
-        float shiftX = 0f;
+
+        // もし右端が画面外(＋パディング)を超えるなら、フリップしてボタンの「左側」に配置する
+        if (tooltipCorners[2].x > screenRect.xMax - _padding)
+        {
+            _rectTransform.pivot = new Vector2(1f, 0.5f); // ピボットを右端に変更
+            _rectTransform.position = buttonLeftCenter - new Vector3(_offsetFromButton, 0, 0);
+        }
+
+        // Y軸の画面外補正（上下の見切れ対策）
+        // ピボット変更後の正確な座標を再取得
+        _backgroundRect.GetWorldCorners(tooltipCorners);
         float shiftY = 0f;
 
-        // --- 水平方向 (Horizontal) ---
-
-        // 左にはみ出している場合
-        if (corners[0].x < screenRect.x + _padding)
+        if (tooltipCorners[1].y > screenRect.yMax - _padding) // 上にはみ出た
         {
-            shiftX = (screenRect.x + _padding) - corners[0].x;
+            shiftY = (screenRect.yMax - _padding) - tooltipCorners[1].y;
         }
-        // 右にはみ出している場合
-        else if (corners[2].x > screenRect.xMax - _padding)
+        else if (tooltipCorners[0].y < screenRect.y + _padding) // 下にはみ出た
         {
-            shiftX = (screenRect.xMax - _padding) - corners[2].x;
+            shiftY = (screenRect.y + _padding) - tooltipCorners[0].y;
         }
 
-        // --- 垂直方向 (Vertical) ---
+        // 上下の押し戻しを適用
+        _rectTransform.position += new Vector3(0, shiftY, 0);
 
-        // 下にはみ出している場合
-        if (corners[0].y < screenRect.y + _padding)
-        {
-            shiftY = (screenRect.y + _padding) - corners[0].y;
-        }
-        // 上にはみ出している場合
-        else if (corners[2].y > screenRect.yMax - _padding)
-        {
-            shiftY = (screenRect.yMax - _padding) - corners[2].y;
-        }
-
-        // 補正値を適用
-        transform.position += new Vector3(shiftX, shiftY, 0);
+        _canvasGroup.alpha = 1f;
     }
 
     public void Hide()
     {
         _canvasGroup.alpha = 0f;
-        _canvasGroup.blocksRaycasts = false;
     }
 }

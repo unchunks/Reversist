@@ -12,25 +12,31 @@ public class StoneSelectorButton : MonoBehaviour, IPointerClickHandler, IPointer
     [SerializeField] private TextMeshProUGUI _countText;
 
     [Header("Settings")]
-    [SerializeField] private StoneType _myType;
     [SerializeField] private Color _activeColor = new Color(0.8f, 0.2f, 0.8f, 0.5f);
     [SerializeField] private Color _inactiveColor = new Color(0.2f, 0.2f, 0.2f, 0.5f);
     [SerializeField] private Color _lockedColor = new Color(0.1f, 0.1f, 0.1f, 0.5f);
 
     private StoneSelectorUI _parentUI;
+    private StoneData _myData; // ScriptableObjectを保持
+    private RectTransform _rectTransform;
+
     private int _currentCount;
-    private bool _isInfinite;
     private bool _isSelected;
     private bool _isSystemInteractable = true;
 
-    public void Initialize(StoneSelectorUI parent, StoneType type, int count, Sprite iconSprite)
+    private void Awake()
+    {
+        _rectTransform = GetComponent<RectTransform>();
+    }
+
+    public void Initialize(StoneSelectorUI parent, StoneData data, int count)
     {
         _parentUI = parent;
-        _myType = type;
+        _myData = data;
 
-        if (iconSprite != null)
+        if (_myData != null && _myData.Icon != null)
         {
-            _iconImage.sprite = iconSprite;
+            _iconImage.sprite = _myData.Icon;
             _iconImage.preserveAspect = true;
         }
 
@@ -42,9 +48,7 @@ public class StoneSelectorButton : MonoBehaviour, IPointerClickHandler, IPointer
     public void UpdateCount(int count)
     {
         _currentCount = count;
-        _isInfinite = (count == -1);
-        if (_isInfinite) _countText.text = "∞";
-        else _countText.text = count.ToString();
+        _countText.text = (count == -1) ? "∞" : count.ToString();
         UpdateVisuals();
     }
 
@@ -63,20 +67,13 @@ public class StoneSelectorButton : MonoBehaviour, IPointerClickHandler, IPointer
 
     private void UpdateVisuals()
     {
-        bool hasStock = _isInfinite || _currentCount > 0;
+        if (_myData == null) return;
+        bool hasStock = (_currentCount == -1 || _currentCount > 0);
 
         if (!_isSystemInteractable)
         {
-            if (_isSelected)
-            {
-                _backgroundImage.color = _activeColor * 0.5f;
-                _iconImage.color = GetColorForType(_myType) * 0.7f;
-            }
-            else
-            {
-                _backgroundImage.color = _lockedColor;
-                _iconImage.color = GetColorForType(_myType) * 0.3f;
-            }
+            _backgroundImage.color = _isSelected ? _activeColor * 0.5f : _lockedColor;
+            _iconImage.color = _myData.ThemeColor * (_isSelected ? 0.7f : 0.3f);
         }
         else if (!hasStock)
         {
@@ -86,41 +83,24 @@ public class StoneSelectorButton : MonoBehaviour, IPointerClickHandler, IPointer
         else
         {
             _backgroundImage.color = _isSelected ? _activeColor : _inactiveColor;
-            _iconImage.color = GetColorForType(_myType);
+            _iconImage.color = _myData.ThemeColor; // データから色を取得
         }
     }
 
     public void OnPointerClick(PointerEventData eventData)
     {
         if (!_isSystemInteractable) return;
-        if (!_isInfinite && _currentCount <= 0) return;
-        _parentUI.OnButtonSelected(_myType);
+        if (_currentCount != -1 && _currentCount <= 0) return;
+        _parentUI.OnButtonSelected(_myData.Type);
     }
 
-    // マウスホバー時の処理
     public void OnPointerEnter(PointerEventData eventData)
     {
-        // 使い切っていても説明は見たいので、無条件で表示リクエストを送る
-        // 自分の位置(transform.position)を渡して、その上に表示させる
-        _parentUI.OnButtonHoverEnter(_myType, transform.position);
+        _parentUI.OnButtonHoverEnter(_myData.Type, _rectTransform);
     }
 
-    // マウスが離れた時の処理
     public void OnPointerExit(PointerEventData eventData)
     {
         _parentUI.OnButtonHoverExit();
-    }
-
-    private Color GetColorForType(StoneType type)
-    {
-        switch (type)
-        {
-            case StoneType.Expander: return Color.cyan;
-            case StoneType.Bomb: return Color.red;
-            case StoneType.Phantom: return new Color(0.7f, 0.5f, 1.0f);
-            case StoneType.Spy: return Color.green;
-            case StoneType.Fixed: return Color.yellow;
-            default: return Color.white;
-        }
     }
 }

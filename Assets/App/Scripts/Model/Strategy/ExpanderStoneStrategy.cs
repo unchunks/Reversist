@@ -2,12 +2,14 @@ using System.Collections.Generic;
 
 public class ExpanderStoneStrategy : StoneStrategy
 {
-    public override void OnAfterPlacement(BoardState board, PlayerMove move, List<Position> flippedStones, MoveResult result)
+    public override void OnAfterPlacement(BoardState board, PlayerMove move, List<Position> flippedStones, MoveResult outResult)
     {
         board.ExpandBoard();
-        result.WasBoardExpanded = true; // イベント記録
 
-        // エフェクト記録
-        result.Effects.Add(new EffectEvent { Type = StoneType.Expander, Origin = move.Pos });
+        // 録
+        if (outResult == null) return;
+        outResult.Effect.Type = StoneType.Expander;
+        outResult.Effect.Origin = move.Pos;
+        outResult.WasBoardExpanded = true;
     }
 }

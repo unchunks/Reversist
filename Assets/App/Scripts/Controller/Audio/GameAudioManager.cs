@@ -1,37 +1,33 @@
-using UnityEngine;
+ï»¿using UnityEngine;
 using System.Collections.Generic;
 using Cysharp.Threading.Tasks;
 using UnityEngine.Audio;
 using System.Threading;
 
-// ---------------------------------------------------------
-// CORE: Audio Manager
-// BGM‚ÌƒNƒƒXƒtƒF[ƒhASE‚Ìƒsƒbƒ`ƒ‰ƒ“ƒ_ƒ€‰»A“¯”­‰¹§Œä‚ğ”õ‚¦‚½“‡ƒTƒEƒ“ƒhƒVƒXƒeƒ€
-// ---------------------------------------------------------
-
+/// <summary>
+/// ã‚²ãƒ¼ãƒ å…¨ä½“ã®ã‚ªãƒ¼ãƒ‡ã‚£ã‚ªç®¡ç†ã‚’æ‹…å½“ã™ã‚‹ã‚·ãƒ³ã‚°ãƒ«ãƒˆãƒ³
+/// </summary>
 public class GameAudioManager : MonoBehaviour
 {
     public static GameAudioManager Instance { get; private set; }
 
-    [Header("Mixer Group (Optional)")]
+    [Header("Mixer")]
+    [SerializeField] private AudioMixer _audioMixer;
     [SerializeField] private AudioMixerGroup _bgmGroup;
     [SerializeField] private AudioMixerGroup _seGroup;
 
     [Header("Audio Sources")]
-    [Tooltip("BGM—p (2‚Â—pˆÓ‚µ‚ÄƒNƒƒXƒtƒF[ƒh‚³‚¹‚é)")]
     [SerializeField] private AudioSource _bgmSourceA;
     [SerializeField] private AudioSource _bgmSourceB;
-    [Tooltip("SE—p")]
     [SerializeField] private AudioSource _seSource;
 
     [Header("Clips Registration")]
-    // ƒCƒ“ƒXƒyƒNƒ^[‚Åİ’è‚µ‚â‚·‚¢‚æ‚¤‚ÉƒŠƒXƒg‰»
     [SerializeField] private AudioClip _bgmTitle;
     [SerializeField] private AudioClip _bgmMainGame;
     [SerializeField] private AudioClip _bgmWin;
     [SerializeField] private AudioClip _bgmLose;
 
-    // Î‚²‚Æ‚ÌSEƒf[ƒ^
+    // çŸ³ã”ã¨ã®SEãƒ‡ãƒ¼ã‚¿
     [System.Serializable]
     public struct StoneAudioData
     {
@@ -41,75 +37,162 @@ public class GameAudioManager : MonoBehaviour
     }
     [SerializeField] private List<StoneAudioData> _stoneClips;
 
-    // UI“™‚Ì”Ä—pSE
+    // UIç­‰ã®æ±ç”¨SE
     [Header("UI / Common SE")]
     [SerializeField] private AudioClip _seButtonHover;
     [SerializeField] private AudioClip _seButtonClick;
     [SerializeField] private AudioClip _seGameStart;
     [SerializeField] private AudioClip _sePass;
+    [SerializeField] private AudioClip _seInvalid;
 
-    // ‚‘¬ŒŸõ—p«‘
-    private Dictionary<StoneType, StoneAudioData> _clipMap = new Dictionary<StoneType, StoneAudioData>();
+    // ãƒ‘ãƒ©ãƒ¡ãƒ¼ã‚¿åï¼ˆExposed Parameterã¨ä¸€è‡´ã•ã›ã‚‹ã“ã¨ï¼‰
+    private const string PARAM_MASTER_VOL = "Master_Volume";
+    private const string PARAM_BGM_VOL = "BGM_Volume";
+    private const string PARAM_SE_VOL = "SE_Volume";
 
-    // BGMƒNƒƒXƒtƒF[ƒh§Œä—p
+    // SEæ¤œç´¢ç”¨
+    private StoneAudioData[] _clipArray;
+
+    // BGMã‚¯ãƒ­ã‚¹ãƒ•ã‚§ãƒ¼ãƒ‰åˆ¶å¾¡ç”¨
     private bool _isUsingSourceA = true;
-    private float _bgmVolume = 0.5f;
     private CancellationTokenSource _bgmFadeCts;
 
-    // SEƒŠƒ~ƒbƒ^[i“¯‚¶ƒtƒŒ[ƒ€‚Å‘å—Ê‚É–Â‚ç‚³‚È‚¢j
+    // SEãƒªãƒŸãƒƒã‚¿ãƒ¼ï¼ˆåŒã˜ãƒ•ãƒ¬ãƒ¼ãƒ ã§å¤§é‡ã«é³´ã‚‰ã•ãªã„ï¼‰
     private int _frameSeCount = 0;
     private const int MAX_SE_PER_FRAME = 3;
 
+    // ç¾åœ¨ã®ãƒœãƒªãƒ¥ãƒ¼ãƒ è¨­å®šå€¤ (0.0 ~ 1.0)
+    private const float DEFAULT_VOLUME = 0.8f;
+    public float CurrentMasterVolume { get; private set; } = DEFAULT_VOLUME;
+    public float CurrentBGMVolume { get; private set; } = DEFAULT_VOLUME;
+    public float CurrentSEVolume { get; private set; } = DEFAULT_VOLUME;
+
     private void Awake()
     {
-        // ƒVƒ“ƒOƒ‹ƒgƒ“ƒpƒ^[ƒ“id•¡‚µ‚½‚ç©”šj
+        // ã‚·ãƒ³ã‚°ãƒ«ãƒˆãƒ³
         if (Instance != null && Instance != this)
         {
             Destroy(gameObject);
             return;
         }
-
         Instance = this;
         DontDestroyOnLoad(gameObject);
 
-        // «‘\’z
+        // é…åˆ—ã®åˆæœŸåŒ– (StoneTypeã®æœ€å¤§å€¤+1ã®ã‚µã‚¤ã‚º)
+        _clipArray = new StoneAudioData[(int)StoneType.Size];
         foreach (var data in _stoneClips)
         {
-            if (!_clipMap.ContainsKey(data.Type)) _clipMap.Add(data.Type, data);
+            _clipArray[(int)data.Type] = data;
         }
 
-        // AudioSource‚Ì‰Šúİ’è
-        SetupSource(_bgmSourceA, true);
-        SetupSource(_bgmSourceB, true);
-        SetupSource(_seSource, false);
+        // AudioSourceã®åˆæœŸè¨­å®š
+        SetupSource(_bgmSourceA, true, _bgmGroup);
+        SetupSource(_bgmSourceB, true, _bgmGroup);
+        SetupSource(_seSource, false, _seGroup);
     }
 
-    private void SetupSource(AudioSource source, bool loop)
+    private void Start()
     {
-        if (source == null) return;
-        source.loop = loop;
-        source.playOnAwake = false;
-        if (loop) source.volume = 0; // BGM‚ÍƒtƒF[ƒhƒCƒ“‘O’ñ‚Å0
-
-        // Mixerİ’è‚ª‚ ‚ê‚Î“K—p
-        if (loop && _bgmGroup != null) source.outputAudioMixerGroup = _bgmGroup;
-        else if (!loop && _seGroup != null) source.outputAudioMixerGroup = _seGroup;
+        // ä¿å­˜ã•ã‚ŒãŸéŸ³é‡è¨­å®šã®èª­ã¿è¾¼ã¿ã¨é©ç”¨
+        LoadVolumeSettings();
     }
 
     private void LateUpdate()
     {
-        // ƒtƒŒ[ƒ€‚²‚Æ‚Ì”­‰¹”ƒJƒEƒ“ƒ^‚ğƒŠƒZƒbƒg
+        // ãƒ•ãƒ¬ãƒ¼ãƒ ã”ã¨ã®éŸ³æ•°ã‚«ã‚¦ãƒ³ã‚¿ã‚’ãƒªã‚»ãƒƒãƒˆ
         _frameSeCount = 0;
     }
 
-    // ========================================================================
-    // BGM Control (Cross-fade)
-    // ========================================================================
+    private void SetupSource(AudioSource source, bool loop, AudioMixerGroup group)
+    {
+        if (source == null) return;
+
+        source.loop = loop;
+        source.playOnAwake = false;
+        source.volume = loop ? 0f : 1.0f;   // BGMã¯ãƒ•ã‚§ãƒ¼ãƒ‰å‰æã€SEã¯åŸºæº–éŸ³é‡(Mixerã§åˆ¶å¾¡)
+        if (group != null) source.outputAudioMixerGroup = group;
+    }
+
+    #region Volume Control
+
+    /// <summary>
+    /// ãƒã‚¹ã‚¿ãƒ¼éŸ³é‡ã‚’è¨­å®šã™ã‚‹ (0.0 ï½ 1.0)
+    /// </summary>
+    public void SetMasterVolume(float value)
+    {
+        CurrentMasterVolume = Mathf.Clamp01(value);
+        ApplyVolumeToMixer(PARAM_MASTER_VOL, CurrentMasterVolume);
+        PlayerPrefs.SetFloat("Conf_MasterVolume", CurrentMasterVolume);
+    }
+
+    /// <summary>
+    /// BGMã®éŸ³é‡ã‚’è¨­å®šã™ã‚‹ (0.0 ã€œ 1.0)
+    /// </summary>
+    public void SetBGMVolume(float value)
+    {
+        CurrentBGMVolume = Mathf.Clamp01(value);
+        ApplyVolumeToMixer(PARAM_BGM_VOL, CurrentBGMVolume);
+        PlayerPrefs.SetFloat("Conf_BGMVolume", CurrentBGMVolume);
+    }
+
+    /// <summary>
+    /// SEã®éŸ³é‡ã‚’è¨­å®šã™ã‚‹ (0.0 ã€œ 1.0)
+    /// </summary>
+    public void SetSEVolume(float value)
+    {
+        CurrentSEVolume = Mathf.Clamp01(value);
+        ApplyVolumeToMixer(PARAM_SE_VOL, CurrentSEVolume);
+        PlayerPrefs.SetFloat("Conf_SEVolume", CurrentSEVolume);
+    }
+
+    private void ApplyVolumeToMixer(string paramName, float linearValue)
+    {
+        if (_audioMixer == null) return;
+
+        // ç·šå½¢å€¤(0-1)ã‚’ãƒ‡ã‚·ãƒ™ãƒ«(-80dB ~ 0dB)ã«å¤‰æ›
+        // Log10(0)ã¯ãƒã‚¤ãƒŠã‚¹ç„¡é™å¤§ã«ãªã‚‹ãŸã‚ã€0.0001ä»¥ä¸‹ã¯-80dBã¨ã™ã‚‹
+        float db = 0.0f;
+
+        if (linearValue <= 0.0001f)
+        {
+            db = -80.0f;
+        }
+        else
+        {
+            db = 20.0f * Mathf.Log10(linearValue);
+        }
+
+        _audioMixer.SetFloat(paramName, db);
+    }
+
+    /// <summary>
+    /// è¨­å®šã‚’ä¿å­˜ã™ã‚‹ï¼ˆè¨­å®šç”»é¢ã‚’é–‰ã˜ãŸã¨ãã«ä¿å­˜ï¼‰
+    /// </summary>
+    public void SaveSettings()
+    {
+        PlayerPrefs.Save();
+    }
+
+    private void LoadVolumeSettings()
+    {
+        CurrentMasterVolume = PlayerPrefs.GetFloat("Conf_MasterVolume", DEFAULT_VOLUME);
+        CurrentBGMVolume = PlayerPrefs.GetFloat("Conf_BGMVolume", DEFAULT_VOLUME);
+        CurrentSEVolume = PlayerPrefs.GetFloat("Conf_SEVolume", DEFAULT_VOLUME);
+
+        // ãƒŸã‚­ã‚µãƒ¼ã«é©ç”¨ (Startæ™‚ã«é©ç”¨ã—ãªã„ã¨åˆæœŸå€¤ã«æˆ»ã£ã¦ã—ã¾ã†)
+        ApplyVolumeToMixer(PARAM_MASTER_VOL, CurrentMasterVolume);
+        ApplyVolumeToMixer(PARAM_BGM_VOL, CurrentBGMVolume);
+        ApplyVolumeToMixer(PARAM_SE_VOL, CurrentSEVolume);
+    }
+
+    #endregion
+
+    #region BGM Control
 
     public enum BgmType { Title, MainGame, Win, Lose, Silence }
 
     /// <summary>
-    /// BGM‚ğŠŠ‚ç‚©‚ÉØ‚è‘Ö‚¦‚é
+    /// BGMã‚’æ»‘ã‚‰ã‹ã«åˆ‡ã‚Šæ›¿ãˆã‚‹
     /// </summary>
     public void PlayBGM(BgmType type, float fadeDuration = 1.0f)
     {
@@ -123,25 +206,22 @@ public class GameAudioManager : MonoBehaviour
             case BgmType.Silence: nextClip = null; break;
         }
 
-        // Œ»İ–Â‚Á‚Ä‚¢‚éSource‚ÆAŸ‚É–Â‚ç‚·Source‚ğ“Á’è
         AudioSource currentSource = _isUsingSourceA ? _bgmSourceA : _bgmSourceB;
         AudioSource nextSource = _isUsingSourceA ? _bgmSourceB : _bgmSourceA;
 
-        // “¯‚¶‹È‚È‚ç‰½‚à‚µ‚È‚¢
+        // åŒã˜æ›²ãªã‚‰ä½•ã‚‚ã—ãªã„
         if (currentSource.isPlaying && currentSource.clip == nextClip) return;
 
-        // ƒtƒF[ƒhˆ—ŠJn
+        // ãƒ•ã‚§ãƒ¼ãƒ‰å‡¦ç†é–‹å§‹
         _bgmFadeCts?.Cancel();
         _bgmFadeCts = new CancellationTokenSource();
         CrossFadeBGM(currentSource, nextSource, nextClip, fadeDuration, _bgmFadeCts.Token).Forget();
 
-        // ƒtƒ‰ƒO”½“]
         _isUsingSourceA = !_isUsingSourceA;
     }
 
     private async UniTaskVoid CrossFadeBGM(AudioSource current, AudioSource next, AudioClip nextClip, float duration, CancellationToken token)
     {
-        // Ÿ‚Ì‹È‚Ì€”õ
         if (nextClip != null)
         {
             next.clip = nextClip;
@@ -152,82 +232,84 @@ public class GameAudioManager : MonoBehaviour
         float time = 0;
         float startVol = current.volume;
 
-        while (time < duration)
+        try
         {
-            time += Time.deltaTime;
-            float t = time / duration;
+            while (time < duration)
+            {
+                time += Time.deltaTime;
+                float t = time / duration;
 
-            // ƒtƒF[ƒhƒAƒEƒg
-            if (current.isPlaying)
-                current.volume = Mathf.Lerp(startVol, 0, t);
+                // AudioSourceã®volumeã¯0.0ï½1.0ã®ã€Œãƒ•ã‚§ãƒ¼ãƒ‰ç”¨ä¿‚æ•°ã€ã¨ã—ã¦ã®ã¿æ‰±ã†ã€‚çµ¶å¯¾çš„ãªéŸ³é‡ã¯Mixerã«ä»»ã›ã‚‹ã€‚
+                if (current.isPlaying) current.volume = Mathf.Lerp(startVol, 0f, t);
+                if (nextClip != null) next.volume = Mathf.Lerp(0f, 1.0f, t);
 
-            // ƒtƒF[ƒhƒCƒ“
-            if (nextClip != null)
-                next.volume = Mathf.Lerp(0, _bgmVolume, t);
-
-            await UniTask.Yield(token);
+                await UniTask.Yield(PlayerLoopTiming.Update, token);
+            }
         }
-
-        current.Stop();
-        current.volume = 0;
-
-        if (nextClip != null) next.volume = _bgmVolume;
-        else next.Stop(); // Silence‚Ìê‡
+        catch (System.OperationCanceledException)
+        {
+            // ã‚­ãƒ£ãƒ³ã‚»ãƒ«ã•ã‚ŒãŸå ´åˆï¼ˆåˆ¥ã®æ›²ãŒè¦æ±‚ã•ã‚ŒãŸå ´åˆï¼‰ã¯å®‰å…¨ã«æŠœã‘ã‚‹
+        }
+        finally
+        {
+            current.Stop();
+            current.volume = 0f;
+            if (nextClip != null && !token.IsCancellationRequested) next.volume = 1.0f;
+        }
     }
 
-    // ========================================================================
-    // SE Control
-    // ========================================================================
+    #endregion
+
+    #region SE Control
 
     /// <summary>
-    /// Î‚Ì”z’u‰¹‚ğ–Â‚ç‚·iƒsƒbƒ`ƒ‰ƒ“ƒ_ƒ€‰»•t‚«j
+    /// çŸ³ã®é…ç½®éŸ³ã‚’é³´ã‚‰ã™
     /// </summary>
     public void PlayStoneSpawn(StoneType type)
     {
-        if (_frameSeCount >= MAX_SE_PER_FRAME) return; // “¯”­‰¹§ŒÀ
+        if (_frameSeCount >= MAX_SE_PER_FRAME) return;
 
-        if (_clipMap.TryGetValue(type, out var data) && data.SpawnClip != null)
+        var data = _clipArray[(int)type];
+        if (data.SpawnClip != null)
         {
-            PlayOneShot(data.SpawnClip, 0.9f, 1.1f);
+            PlayOneShot(data.SpawnClip);
         }
-        else
+        else if (_clipArray[(int)StoneType.Normal].SpawnClip != null)   // ã‚¿ã‚¤ãƒ—å›ºæœ‰ã®ã‚¯ãƒªãƒƒãƒ—ãŒãªã„å ´åˆã¯Normalã®é…ç½®éŸ³ã‚’é³´ã‚‰ã™
         {
-            // ‚È‚¯‚ê‚ÎNormal‚Å‘ã—p
-            if (_clipMap.TryGetValue(StoneType.Normal, out var normalData))
-            {
-                PlayOneShot(normalData.SpawnClip, 0.9f, 1.1f);
-            }
+            PlayOneShot(_clipArray[(int)StoneType.Normal].SpawnClip);
         }
     }
 
     /// <summary>
-    /// Î‚Ì“ÁêŒø‰Ê‰¹‚ğ–Â‚ç‚·
+    /// çŸ³ã®ç‰¹æ®ŠåŠ¹æœéŸ³ã‚’é³´ã‚‰ã™
     /// </summary>
     public void PlayStoneEffect(StoneType type)
     {
         if (_frameSeCount >= MAX_SE_PER_FRAME) return;
 
-        if (_clipMap.TryGetValue(type, out var data) && data.EffectClip != null)
+        var data = _clipArray[(int)type];
+        if (data.EffectClip != null)
         {
-            // ƒGƒtƒFƒNƒg‰¹‚Í‚ ‚Ü‚èƒsƒbƒ`‚ğ•Ï‚¦‚È‚¢•û‚ªdŒúŠ´‚ªo‚é
-            PlayOneShot(data.EffectClip, 1.0f, 1.0f, 1.2f); // ­‚µ‘å‚«‚ß‚É
+            PlayOneShot(data.EffectClip, 1.2f); // ã‚¨ãƒ•ã‚§ã‚¯ãƒˆã¯å°‘ã—å¤§ãã‚ã«é³´ã‚‰ã™
         }
     }
 
-    public void PlayUIHover() => PlayOneShot(_seButtonHover, 0.95f, 1.05f, 0.5f);
-    public void PlayUIClick() => PlayOneShot(_seButtonClick, 0.9f, 1.1f);
+    public void PlayUIHover() => PlayOneShot(_seButtonHover, 0.5f);
+    public void PlayUIClick() => PlayOneShot(_seButtonClick);
     public void PlayGameStart() => PlayOneShot(_seGameStart);
     public void PlayPass() => PlayOneShot(_sePass);
+    public void PlayInvalid() => PlayOneShot(_seInvalid);
 
     /// <summary>
-    /// “à•””Ä—pSEÄ¶ƒƒ\ƒbƒh
+    /// å†…éƒ¨æ±ç”¨SEå†ç”Ÿãƒ¡ã‚½ãƒƒãƒ‰
     /// </summary>
-    private void PlayOneShot(AudioClip clip, float minPitch = 1.0f, float maxPitch = 1.0f, float volumeScale = 1.0f)
+    private void PlayOneShot(AudioClip clip, float volumeScale = 1.0f)
     {
         if (clip == null || _seSource == null) return;
 
-        _seSource.pitch = Random.Range(minPitch, maxPitch);
         _seSource.PlayOneShot(clip, volumeScale);
         _frameSeCount++;
     }
+
+    #endregion
 }

@@ -1,11 +1,10 @@
 using Cysharp.Threading.Tasks;
-using System.Collections.Generic;
 using System.Threading;
 using UnityEngine;
+using UnityEngine.EventSystems;
 
 public class HumanPlayer : IPlayer
 {
-    private LayerMask _hitLayer = LayerMask.GetMask("Board");
     private ReversiView _view;
     private StoneSelectorUI _selectorUI;
 
@@ -17,21 +16,32 @@ public class HumanPlayer : IPlayer
 
     public async UniTask<PlayerMove> DecideMoveAsync(BoardState board, StoneColor playerColor, StoneInventory inventory, CancellationToken token)
     {
-        // 入力を待機
         while (true)
         {
+            // 左クリックが押されるまで待機
             await UniTask.WaitUntil(() => Input.GetMouseButtonDown(0), cancellationToken: token);
+
+            // UIを操作している場合はスキップ
+            if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject())
+            {
+                // GetMouseButtonDownなので、クリックをを離すまで待たなくてよい
+                await UniTask.Yield(PlayerLoopTiming.Update, token);
+                continue;
+            }
 
             Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
 
-            // Raycastはあくまで「何かに当たったか」を判定するために使う
-            // LayerMaskを設定して盤面のみに当たるようにするのが望ましい
-            if (Physics.Raycast(ray, out RaycastHit hit, 100f, _hitLayer))
+            // 盤面の高さ(Y=0)の数学的平面との交差判定を行う
+            Plane boardPlane = new Plane(Vector3.up, Vector3.zero);
+
+            if (boardPlane.Raycast(ray, out float enter))
             {
-                // 【修正点】座標計算ロジックをViewに委譲
-                // これにより、盤面がどこにあろうと、回転していようと、正しいグリッド座標が返ってくる
-                if (_view.TryWorldToGrid(hit.point, out Position pos))
+                Vector3 hitPoint = ray.GetPoint(enter);
+
+                // 座標計算ロジックはViewで行う
+                if (_view.TryWorldToGrid(hitPoint, out Position pos))
                 {
+                    // ReversiController側で IsValidMove を判定しているのでここではそのまま返す
                     return new PlayerMove
                     {
                         Pos = pos,
@@ -40,6 +50,9 @@ public class HumanPlayer : IPlayer
                     };
                 }
             }
+
+            // 無効な場所をクリックした場合は次の入力を待つ
+            await UniTask.Yield(PlayerLoopTiming.Update, token);
         }
     }
 }

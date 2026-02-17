@@ -5,32 +5,26 @@ public class BoardState
     public const int MAX_SIZE = 12;
     public CellData[] Cells;
 
-    // 現在の盤面の有効範囲（正方形を前提しているのでSize1つでも良いが、柔軟性のためWidth/Heightを残す）
+    // 現在の盤面の有効範囲（正方形を前提しているのでSize1つでも良いが、柔軟性のためWidth/Heightを残しておく）
     public int Width { get; private set; }
     public int Height { get; private set; }
 
     // 仮想座標 (0,0) が、実配列 Cells のどこに対応するかを示すオフセット
     private int _originX;
     private int _originY;
+    public int OriginX => _originX;
+    public int OriginY => _originY;
 
-    public BoardState(int initialSize = 8)
+    public BoardState()
     {
-        // ヒープアロケーションは最初の一回のみ
         Cells = new CellData[MAX_SIZE * MAX_SIZE];
-
-        // 初期サイズ設定
-        Width = initialSize;
-        Height = initialSize;
-
-        // 真ん中に配置されるようにオフセットを計算
-        // 例: 12x12 の中で 8x8 を使うなら、開始位置は (2, 2)
-        _originX = (MAX_SIZE - initialSize) / 2;
-        _originY = (MAX_SIZE - initialSize) / 2;
 
         InitializeBoard();
     }
 
-    // コピーコンストラクタ（AI用）
+    /// <summary>
+    /// コピーコンストラクタ（メモリ未確保時用）
+    /// </summary>
     public BoardState(BoardState source)
     {
         Cells = new CellData[MAX_SIZE * MAX_SIZE];
@@ -42,8 +36,31 @@ public class BoardState
         _originY = source._originY;
     }
 
-    private void InitializeBoard()
+    /// <summary>
+    /// 既存の BoardState インスタンスに対して、自身の状態を上書き（同期）する
+    /// </summary>
+    public void CopyTo(BoardState dst)
     {
+        // 配列のメモリブロックをまるごと転送
+        Array.Copy(Cells, dst.Cells, Cells.Length);
+
+        // 状態管理用のプリミティブ変数を同期
+        dst.Width = Width;
+        dst.Height = Height;
+        dst._originX = _originX;
+        dst._originY = _originY;
+    }
+
+    private void InitializeBoard(int initialSize = 8)
+    {
+        Width = initialSize;
+        Height = initialSize;
+
+        // 真ん中に配置されるようにオフセットを計算
+        // 12x12 の中で 8x8 を使うなら、開始位置は (2, 2)
+        _originX = (MAX_SIZE - initialSize) / 2;
+        _originY = (MAX_SIZE - initialSize) / 2;
+
         // 仮想座標系における中心
         int cx = Width / 2;
         int cy = Height / 2;
@@ -59,16 +76,15 @@ public class BoardState
     /// </summary>
     public CellData GetCell(int x, int y)
     {
+        // 論理座標チェック
         if (x < 0 || x >= Width || y < 0 || y >= Height)
             return new CellData { Color = StoneColor.Wall };
 
-        // オフセットを加算して実配列にアクセス
         int realX = _originX + x;
         int realY = _originY + y;
 
-        // 実配列の範囲外チェック
         if (realX < 0 || realX >= MAX_SIZE || realY < 0 || realY >= MAX_SIZE)
-            throw new IndexOutOfRangeException("BoardState.GetCell: _originX または _originY が不正値の可能性があります");
+            throw new IndexOutOfRangeException("BoardState: Origin offset is invalid.");
 
         return Cells[realY * MAX_SIZE + realX];
     }
@@ -82,17 +98,16 @@ public class BoardState
         int realY = _originY + y;
 
         if (realX < 0 || realX >= MAX_SIZE || realY < 0 || realY >= MAX_SIZE)
-            throw new IndexOutOfRangeException("BoardState.SetCell: _originX または _originY が不正値の可能性があります");
+            throw new IndexOutOfRangeException("BoardState: Origin offset is invalid.");
 
         int idx = realY * MAX_SIZE + realX;
         Cells[idx].Color = c;
         Cells[idx].Type = t;
-        Cells[idx].IsFixed = (t == StoneType.Fixed);
     }
 
     /// <summary>
-    /// 盤面拡張 (Zero-Copy Implementation)
-    /// 配列の中身は一切動かさず、有効範囲（窓）を広げるだけ。O(1)。
+    /// 盤面拡張
+    /// 配列の中身は一切動かさず、有効範囲を広げるだけ
     /// </summary>
     public void ExpandBoard()
     {

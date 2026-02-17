@@ -1,0 +1,13 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" editor-extension-mode="False">
+    <Style src="project://database/Assets/App/Art/UI/GlobalSettingsStyle.uss?fileID=7433441132597879392&amp;guid=09600408d63e78143a98838cce1732f8&amp;type=3#GlobalSettingsStyle" />
+    <ui:VisualElement name="Container" class="settings-container">
+        <ui:VisualElement name="Window" class="settings-window">
+            <ui:Label text="設定" class="header-label" style="-unity-font-definition: url(&quot;project://database/Assets/TextMesh%20Pro/Fonts/NotoSansJP-Medium.ttf?fileID=12800000&amp;guid=9f1cd91df134e184aaf1c9edf6377d8d&amp;type=3#NotoSansJP-Medium&quot;); -unity-font-style: bold;" />
+            <ui:Slider label="マスター音量" name="SliderMaster" high-value="1" low-value="0" class="cyber-slider" style="-unity-font-definition: url(&quot;project://database/Assets/TextMesh%20Pro/Fonts/NotoSansJP-Medium.ttf?fileID=12800000&amp;guid=9f1cd91df134e184aaf1c9edf6377d8d&amp;type=3#NotoSansJP-Medium&quot;);" />
+            <ui:Slider label="BGM音量" name="SliderBGM" high-value="1" low-value="0" class="cyber-slider" style="-unity-font-definition: url(&quot;project://database/Assets/TextMesh%20Pro/Fonts/NotoSansJP-Medium.ttf?fileID=12800000&amp;guid=9f1cd91df134e184aaf1c9edf6377d8d&amp;type=3#NotoSansJP-Medium&quot;);" />
+            <ui:Slider label="SE音量" name="SliderSE" high-value="1" low-value="0" class="cyber-slider" style="-unity-font-definition: url(&quot;project://database/Assets/TextMesh%20Pro/Fonts/NotoSansJP-Medium.ttf?fileID=12800000&amp;guid=9f1cd91df134e184aaf1c9edf6377d8d&amp;type=3#NotoSansJP-Medium&quot;);" />
+            <ui:Button text="閉じる" name="BtnClose" class="cyber-button" />
+            <ui:Button text="ゲーム終了" name="BtnQuit" class="cyber-button quit-button" />
+        </ui:VisualElement>
+    </ui:VisualElement>
+</ui:UXML>

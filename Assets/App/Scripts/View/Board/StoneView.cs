@@ -31,13 +31,17 @@ public class StoneView : MonoBehaviour
         if (_renderer == null) _renderer = GetComponent<Renderer>();
     }
 
+    /// <summary>
+    /// 石の見た目を設定する。色とタイプに応じて、プロパティブロックに必要な値をセットして適用する
+    /// </summary>
+    /// <param name="color"></param>
+    /// <param name="type"></param>
     public void SetAppearance(StoneColor color, StoneType type)
     {
         _currentColor = color;
         _currentType = type;
 
         _renderer.GetPropertyBlock(_propBlock);
-        // 通常適用（上書きなし）
         ApplyColorSettings(color, type, null);
         _renderer.SetPropertyBlock(_propBlock);
     }

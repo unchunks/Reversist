@@ -1,6 +1,7 @@
 using Cysharp.Threading.Tasks;
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using TMPro;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -30,18 +31,21 @@ public class TitleController : MonoBehaviour
     [SerializeField] private string _gameSceneName = "ReversiScene";
 
     // 選択中の設定
-    private int _selectedDifficulty = 1;
+    private const int DEFAULT_DIFFICULTY = 1;
+    private int _selectedDifficulty = DEFAULT_DIFFICULTY;
     private GameSettings.PlayerSide _selectedSide = GameSettings.PlayerSide.Black;
 
+    private CancellationTokenSource _cts;
+    private bool _isTransitioning = false; // UIの二重操作防止フラグ
 
     private void Start()
     {
+        _cts = new CancellationTokenSource();
+
         if (GameAudioManager.Instance != null)
         {
             GameAudioManager.Instance.PlayBGM(GameAudioManager.BgmType.Title);
         }
-
-        FadeIn().Forget();
 
         _mainMenuGroup.alpha = 1;
         _mainMenuGroup.blocksRaycasts = true;
@@ -51,42 +55,31 @@ public class TitleController : MonoBehaviour
 
         InitializeDropdowns();
         SetupEvents();
+
+        FadePanelAsync(1f, 0f, _cts.Token).Forget();
+    }
+
+    private void OnDestroy()
+    {
+        _cts?.Cancel();
+        _cts?.Dispose();
     }
 
     private void InitializeDropdowns()
     {
-        // --- 難易度ドロップダウン ---
         if (_difficultyDropdown != null)
         {
             _difficultyDropdown.ClearOptions();
             // 思考時間的に深さ6が限界
-            List<string> diffOptions = new List<string>
-            {
-                "Lv.1",
-                "Lv.2",
-                "Lv.3",
-                "Lv.4",
-                "Lv.5",
-                "Lv.6"
-            };
-            _difficultyDropdown.AddOptions(diffOptions);
-
-            _difficultyDropdown.value = 0;
-            _selectedDifficulty = 1;
+            _difficultyDropdown.AddOptions(new List<string> { "Lv.1", "Lv.2", "Lv.3", "Lv.4", "Lv.5", "Lv.6" });
+            _difficultyDropdown.value = DEFAULT_DIFFICULTY - 1;
+            _selectedDifficulty = DEFAULT_DIFFICULTY;
         }
 
-        // --- 陣営ドロップダウン ---
         if (_sideDropdown != null)
         {
             _sideDropdown.ClearOptions();
-            List<string> sideOptions = new List<string>
-            {
-                "BLACK",
-                "WHITE",
-                "RANDOM"
-            };
-            _sideDropdown.AddOptions(sideOptions);
-
+            _sideDropdown.AddOptions(new List<string> { "黒（先手）", "白（後手）", "ランダム" });
             _sideDropdown.value = 0;
             _selectedSide = GameSettings.PlayerSide.Black;
         }
@@ -94,124 +87,114 @@ public class TitleController : MonoBehaviour
 
     private void SetupEvents()
     {
-        // Main Menu
-        _btnPvP.onClick.AddListener(() =>
-        {
-            GameAudioManager.Instance.PlayUIClick();
-            StartGame(GameSettings.GameMode.PvP);
-        });
-        _btnPvE.onClick.AddListener(() =>
-        {
-            GameAudioManager.Instance.PlayUIClick();
-            ShowDifficultySelect();
-        });
-        _btnQuit.onClick.AddListener(() =>
-        {
-            GameAudioManager.Instance.PlayUIClick();
-            QuitGame();
-        });
+        // メイン画面
+        BindButton(_btnPvP, () => StartGameAsync(GameSettings.GameMode.PvP).Forget());
+        BindButton(_btnPvE, () => SwitchMenuAsync(_mainMenuGroup, _difficultyGroup).Forget());
+        BindButton(_btnQuit, QuitGame);
 
-        // PvE Settings - Difficulty Dropdown
+        // PvE画面
+        BindButton(_btnStartPvE, () => StartGameAsync(GameSettings.GameMode.PvE, _selectedDifficulty, _selectedSide).Forget());
+        BindButton(_btnBack, () => SwitchMenuAsync(_difficultyGroup, _mainMenuGroup).Forget());
+
         if (_difficultyDropdown != null)
         {
-            _difficultyDropdown.onValueChanged.AddListener((int index) =>
+            _difficultyDropdown.onValueChanged.AddListener((index) =>
             {
-                GameAudioManager.Instance.PlayUIClick();
-                OnDifficultyDropdownChanged(index);
+                if (GameAudioManager.Instance != null) GameAudioManager.Instance.PlayUIClick();
+                _selectedDifficulty = index + 1;
             });
         }
 
-        // PvE Settings - Side Dropdown
         if (_sideDropdown != null)
         {
-            _sideDropdown.onValueChanged.AddListener((int index) =>
+            _sideDropdown.onValueChanged.AddListener((index) =>
             {
-                GameAudioManager.Instance.PlayUIClick();
-                OnSideDropdownChanged(index);
+                if (GameAudioManager.Instance != null) GameAudioManager.Instance.PlayUIClick();
+                _selectedSide = index switch
+                {
+                    0 => GameSettings.PlayerSide.Black,
+                    1 => GameSettings.PlayerSide.White,
+                    _ => GameSettings.PlayerSide.Random,
+                };
             });
         }
+    }
 
-        // Start & Back
-        _btnStartPvE.onClick.AddListener(() =>
+    /// <summary>
+    /// ボタンに共通処理（SE再生と二重押し防止）を付与して登録する
+    /// </summary>
+    private void BindButton(Button btn, Action action)
+    {
+        if (btn == null) return;
+        btn.onClick.AddListener(() =>
         {
-            GameAudioManager.Instance.PlayUIClick();
-            StartGame(GameSettings.GameMode.PvE, _selectedDifficulty, _selectedSide);
+            if (_isTransitioning) return; // 遷移中は何もしない
+            if (GameAudioManager.Instance != null) GameAudioManager.Instance.PlayUIClick();
+            action.Invoke();
         });
-        _btnBack.onClick.AddListener(() =>
-        {
-            GameAudioManager.Instance.PlayUIClick();
-            BackToMain();
-        });
     }
 
-    private void OnDifficultyDropdownChanged(int index)
+    private async UniTaskVoid SwitchMenuAsync(CanvasGroup from, CanvasGroup to)
     {
-        // 難易度は1から始まるので+1
-        _selectedDifficulty = index + 1;
-    }
+        if (_isTransitioning) return;
+        _isTransitioning = true;
 
-    private void OnSideDropdownChanged(int index)
-    {
-        switch (index)
-        {
-            case 0: _selectedSide = GameSettings.PlayerSide.Black; break;
-            case 1: _selectedSide = GameSettings.PlayerSide.White; break;
-            case 2: _selectedSide = GameSettings.PlayerSide.Random; break;
-        }
-    }
-
-    private void ShowDifficultySelect()
-    {
-        SwitchMenu(_mainMenuGroup, _difficultyGroup).Forget();
-    }
-
-    private void BackToMain()
-    {
-        SwitchMenu(_difficultyGroup, _mainMenuGroup).Forget();
-    }
-
-    private async UniTaskVoid SwitchMenu(CanvasGroup from, CanvasGroup to)
-    {
         from.blocksRaycasts = false;
-        float duration = 0.3f;
-        float time = 0;
-        while (time < duration)
+        to.blocksRaycasts = false;
+
+        try
         {
-            time += Time.deltaTime;
-            float t = time / duration;
-            from.alpha = 1f - t;
-            to.alpha = t;
-            await UniTask.Yield();
+            float duration = 0.3f;
+            float time = 0;
+            while (time < duration)
+            {
+                time += Time.deltaTime;
+                float t = time / duration;
+                from.alpha = 1f - t;
+                to.alpha = t;
+                await UniTask.Yield(PlayerLoopTiming.Update, _cts.Token);
+            }
         }
-        from.alpha = 0;
-        to.alpha = 1;
-        to.blocksRaycasts = true;
+        catch (Exception e)
+        {
+            Debug.LogError($"Menu Switch Failed: {e.Message}");
+        }
+        finally
+        {
+            from.alpha = 0f;
+            to.alpha = 1f;
+            to.blocksRaycasts = true;
+            _isTransitioning = false;
+        }
     }
 
-    private void StartGame(GameSettings.GameMode mode, int difficulty = 3, GameSettings.PlayerSide side = GameSettings.PlayerSide.Black)
+    private async UniTaskVoid StartGameAsync(GameSettings.GameMode mode, int difficulty = DEFAULT_DIFFICULTY, GameSettings.PlayerSide side = GameSettings.PlayerSide.Black)
     {
+        if (_isTransitioning) return;
+        _isTransitioning = true;
+
         GameSettings.Mode = mode;
         GameSettings.AiDifficulty = difficulty;
         GameSettings.Side = side;
 
-        LoadGameSceneAsync().Forget();
-    }
-
-    private async UniTaskVoid LoadGameSceneAsync()
-    {
         _mainMenuGroup.blocksRaycasts = false;
         _difficultyGroup.blocksRaycasts = false;
 
         try
         {
-            await FadeOut();
-
+            await FadePanelAsync(0f, 1f, _cts.Token);
             await SceneManager.LoadSceneAsync(_gameSceneName);
+        }
+        catch (OperationCanceledException)
+        {
+            // キャンセルの場合 = ゲームを終了したとして、UIのは放置
+            Debug.Log("Scene Load Cancelled.");
         }
         catch (Exception e)
         {
+            // 何らかの理由でシーンの読み込みに失敗した場合、UIを復旧させる
             Debug.LogError($"Scene Load Failed: {e.Message}");
-            if (_fadePanel != null) _fadePanel.blocksRaycasts = false;
+            _isTransitioning = false;
             _mainMenuGroup.blocksRaycasts = true;
         }
     }
@@ -225,64 +208,32 @@ public class TitleController : MonoBehaviour
 #endif
     }
 
-    private async UniTask FadeIn()
+    private async UniTask FadePanelAsync(float startAlpha, float endAlpha, CancellationToken token, float duration = 1f)
     {
-        if (_fadePanel != null)
+        if (_fadePanel == null)
         {
-            // フェードパネルをCanvas内の最前面（描画順最後）に移動
-            // これにより、他の全てのUIの上に覆いかぶさる
-            _fadePanel.transform.SetAsLastSibling();
+            Debug.LogWarning("FadePanel is NOT assigned!");
+            return;
+        }
 
-            _fadePanel.alpha = 1f;
-            _fadePanel.blocksRaycasts = true;
+        _fadePanel.transform.SetAsLastSibling();
+        _fadePanel.blocksRaycasts = true;
 
-            // フェード時間
-            float duration = 1.0f;
+        try
+        {
             float time = 0;
-
             while (time < duration)
             {
                 time += Time.deltaTime;
-                _fadePanel.alpha = 1f - time / duration;
-                await UniTask.Yield();
+                _fadePanel.alpha = Mathf.Lerp(startAlpha, endAlpha, time / duration);
+                await UniTask.Yield(PlayerLoopTiming.Update, token);
             }
-
-            _fadePanel.alpha = 0f;
-            _fadePanel.blocksRaycasts = false;
+            _fadePanel.alpha = endAlpha;
         }
-        else
+        finally
         {
-            Debug.LogWarning("FadePanel is NOT assigned! Jumping to scene directly.");
-        }
-    }
-
-    private async UniTask FadeOut()
-    {
-        if (_fadePanel != null)
-        {
-            // フェードパネルをCanvas内の最前面（描画順最後）に移動
-            // これにより、他の全てのUIの上に覆いかぶさる
-            _fadePanel.transform.SetAsLastSibling();
-
-            _fadePanel.alpha = 0f;
-            _fadePanel.blocksRaycasts = true;
-
-            // フェード時間
-            float duration = 1.0f;
-            float time = 0;
-
-            while (time < duration)
-            {
-                time += Time.deltaTime;
-                _fadePanel.alpha = time / duration;
-                await UniTask.Yield();
-            }
-
-            _fadePanel.alpha = 1f;
-        }
-        else
-        {
-            Debug.LogWarning("FadePanel is NOT assigned! Jumping to scene directly.");
+            // FadeOutはRaycastブロックを維持し、FadeInは解除
+            _fadePanel.blocksRaycasts = (endAlpha > 0.5f);
         }
     }
 }

@@ -1,10 +1,8 @@
 using UnityEngine;
 
-// ---------------------------------------------------------
-// VIEW: Board Cursor (Highlighter)
-// 現在ホバーしているマスを強調表示する
-// ---------------------------------------------------------
-
+/// <summary>
+/// 現在ホバーしているマスを強調表示する
+/// </summary>
 public class BoardCursor : MonoBehaviour
 {
     [SerializeField] private Renderer _renderer;
